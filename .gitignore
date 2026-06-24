@@ -1,0 +1,20 @@
+# environment
+.env
+.env.local
+
+# prisma local db
+*.db
+*.db-journal
+/prisma/migrations/dev.db*
+
+# dependencies
+/node_modules
+
+# next
+/.next/
+/out/
+
+# misc
+.DS_Store
+*.pem
+next-env.d.ts
