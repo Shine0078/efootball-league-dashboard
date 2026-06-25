@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { initialsAvatar } from "@/lib/avatar";
 
@@ -19,34 +19,65 @@ type Match = {
 };
 type AuditLog = { id: string; actor: string; action: string; detail: string | null; createdAt: string };
 type DataShape = { players: Player[]; matches: Match[]; count: { players: number; matches: number } };
+type ApiDataResponse = DataShape & { standings?: unknown; lastUpdated?: string; mostLossesPlayer?: unknown };
+type ErrorResponse = { error?: string };
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unexpected error";
+}
+
+async function readError(res: Response): Promise<string> {
+  const body = await res.json().catch((): ErrorResponse => ({}));
+  return body.error ?? `HTTP ${res.status}`;
+}
+
+function parseScoreInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const numeric = Number(trimmed);
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : Number.NaN;
+}
 
 export default function AdminPanel({ email, role }: { email: string; role: string }) {
   const [data, setData] = useState<DataShape | null>(null);
   const [tab, setTab] = useState<"scores" | "players" | "audit">("scores");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     const res = await fetch(`/api/data?t=${Date.now()}`, { cache: "no-store" });
-    const json: any = await res.json();
+    if (!res.ok) throw new Error(await readError(res));
+    const json = (await res.json()) as ApiDataResponse;
     setData({ players: json.players, matches: json.matches, count: json.count });
-  }
+    setLoadError(null);
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void load().catch((error: unknown) => setLoadError(getErrorMessage(error)));
+  }, [load]);
 
-  function flash(msg: string) {
+  useEffect(() => {
+    return () => {
+      // BUG FIX: Clear pending toast timeout when the admin panel unmounts.
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const flash = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2500);
-  }
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }, []);
 
-  async function apiOk(res: Response, okMsg: string) {
+  const apiOk = useCallback(async (res: Response, okMsg: string) => {
     if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      throw new Error(j.error ?? `HTTP ${res.status}`);
+      throw new Error(await readError(res));
     }
     flash(okMsg);
     await load();
-  }
+  }, [flash, load]);
 
   /** Optimistically patch a match in local state so the UI reflects the change instantly. */
   function patchMatch(id: string, patch: Partial<Match>) {
@@ -59,7 +90,7 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
     location.href = "/admin/login";
   }
 
-  if (!data) return <div className="mx-auto max-w-3xl py-10 text-sm text-slate-400">Loading admin…</div>;
+  if (!data) return <div className="mx-auto max-w-3xl py-10 text-sm text-slate-400">{loadError ?? "Loading admin..."}</div>;
 
   return (
     <div className="space-y-5">
@@ -116,11 +147,12 @@ function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: 
   }
 
   async function save(m: Match) {
-    const h = hg === "" ? null : parseInt(hg, 10);
-    const a = ag === "" ? null : parseInt(ag, 10);
-    if (h != null && (isNaN(h) || h < 0)) return alert("Home goals must be a non-negative integer");
-    if (a != null && (isNaN(a) || a < 0)) return alert("Away goals must be a non-negative integer");
-setSaving(m.id);
+    // BUG FIX: Parse score inputs strictly so partial strings are rejected.
+    const h = parseScoreInput(hg);
+    const a = parseScoreInput(ag);
+    if (h != null && Number.isNaN(h)) return alert("Home goals must be a non-negative integer");
+    if (a != null && Number.isNaN(a)) return alert("Away goals must be a non-negative integer");
+    setSaving(m.id);
     try {
       const status = h != null && a != null ? "completed" : "scheduled";
       const res = await fetch(`/api/matches/${m.id}`, {
@@ -131,8 +163,8 @@ setSaving(m.id);
       await apiOk(res, `Saved ${m.homePlayer.name} ${h ?? "—"}:${a ?? "—"} ${m.awayPlayer.name}`);
       patchMatch(m.id, { homeGoals: h, awayGoals: a, status, playedAt: status === "completed" ? new Date().toISOString() : null });
       setEditId(null);
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(getErrorMessage(e));
     } finally { setSaving(null); }
   }
 
@@ -149,7 +181,7 @@ setSaving(m.id);
       // Optimistically flip this match back to scheduled in the local UI immediately.
       patchMatch(m.id, { homeGoals: null, awayGoals: null, status: "scheduled", playedAt: null });
       if (editId === m.id) setEditId(null);
-    } catch (e: any) { alert(e.message); } finally { setSaving(null); }
+    } catch (e: unknown) { alert(getErrorMessage(e)); } finally { setSaving(null); }
   }
 
   return (
@@ -235,7 +267,7 @@ function PlayersTab({ data, apiOk }: { data: DataShape; apiOk: (res: Response, o
       });
       await apiOk(res, `Added ${name.trim()} (+fixtures auto-generated)`);
       setName(""); setAvatar("");
-    } catch (e: any) { alert(e.message); } finally { setAdding(false); }
+    } catch (e: unknown) { alert(getErrorMessage(e)); } finally { setAdding(false); }
   }
 
   function startEdit(p: Player) {
@@ -254,7 +286,7 @@ function PlayersTab({ data, apiOk }: { data: DataShape; apiOk: (res: Response, o
       });
       await apiOk(res, `Updated ${ed.name.trim()}`);
       setEditing((s) => { const c = { ...s }; delete c[p.id]; return c; });
-    } catch (e: any) { alert(e.message); } finally { setSaving(null); }
+    } catch (e: unknown) { alert(getErrorMessage(e)); } finally { setSaving(null); }
   }
 
   async function remove(p: Player) {
@@ -263,7 +295,7 @@ function PlayersTab({ data, apiOk }: { data: DataShape; apiOk: (res: Response, o
     try {
       const res = await fetch(`/api/players/${p.id}`, { method: "DELETE" });
       await apiOk(res, `Deleted ${p.name}`);
-    } catch (e: any) { alert(e.message); } finally { setSaving(null); }
+    } catch (e: unknown) { alert(getErrorMessage(e)); } finally { setSaving(null); }
   }
 
   return (
@@ -323,9 +355,9 @@ function AuditTab() {
       try {
         const res = await fetch("/api/audit", { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const j = await res.json();
+        const j = (await res.json()) as { logs: AuditLog[] };
         setLogs(j.logs);
-      } catch (e: any) { setErr(e.message); }
+      } catch (e: unknown) { setErr(getErrorMessage(e)); }
     })();
   }, []);
   if (err) return <div className="card p-4 text-sm text-red-300">⚠️ {err}</div>;

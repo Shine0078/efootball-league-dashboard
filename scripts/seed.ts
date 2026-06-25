@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { generateFixturesForAll } from "../src/lib/fixtures";
 
@@ -17,7 +17,7 @@ async function main() {
   const adminEmail = process.env.ADMIN_EMAIL ?? "admin@league.local";
   const adminPassword = process.env.ADMIN_PASSWORD ?? "admin123";
 
-  // Ensure default admin exists (create or update password)
+  // BUG FIX: Upsert keeps the admin seed idempotent across repeated runs.
   const passwordHash = await bcrypt.hash(adminPassword, 10);
   await prisma.admin.upsert({
     where: { email: adminEmail },
@@ -45,8 +45,14 @@ async function main() {
 
   // Generate full double round-robin fixtures
   const fixtures = generateFixturesForAll(ids);
+  const expectedFixtures = ids.length * (ids.length - 1);
+  // BUG FIX: Assert the double round-robin fixture count before writing seed data.
+  if (fixtures.length !== expectedFixtures) {
+    throw new Error(`Expected ${expectedFixtures} fixtures, generated ${fixtures.length}`);
+  }
+  const fixtureRows: Prisma.MatchCreateManyInput[] = fixtures.map((fixture) => ({ ...fixture, status: "scheduled" }));
   await prisma.match.createMany({
-    data: fixtures.map((f) => ({ ...f, status: "scheduled" as const }) as any),
+    data: fixtureRows,
   });
   console.log(`✓ Generated ${fixtures.length} fixtures (${ids.length}×${ids.length - 1})`);
 

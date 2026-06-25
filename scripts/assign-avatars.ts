@@ -43,7 +43,27 @@ interface MediaItem {
   score: number;
 }
 
-async function fetchWithRetry(url: string, retries = 4): Promise<any | null> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function readSource(value: unknown): string | undefined {
+  return isRecord(value) && typeof value.src === "string" ? value.src : undefined;
+}
+
+function isWikiImageItem(value: unknown): value is { srcset: unknown[]; title?: unknown; caption?: unknown } {
+  return isRecord(value) && value.type === "image" && Array.isArray(value.srcset) && value.srcset.length > 0;
+}
+
+function readCaption(value: unknown): string {
+  return isRecord(value) && isRecord(value.text) ? "" : isRecord(value) && typeof value.text === "string" ? value.text : "";
+}
+
+async function fetchWithRetry(url: string, retries = 4): Promise<unknown | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, { headers: { "User-Agent": "efootball-league-dashboard/1.0 (seed script)" } });
@@ -59,16 +79,17 @@ async function fetchWithRetry(url: string, retries = 4): Promise<any | null> {
 async function fetchMedia(name: string): Promise<MediaItem[]> {
   const url = `https://en.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(name)}`;
   const json = await fetchWithRetry(url);
-  if (!json) return [];
-  return (json.items ?? [])
-    .filter((i: any) => i.type === "image" && Array.isArray(i.srcset) && i.srcset.length)
-    .map((i: any) => {
-      const src = (i.srcset[i.srcset.length - 1]?.src ?? i.srcset[0].src) as string | undefined;
+  if (!isRecord(json) || !Array.isArray(json.items)) return [];
+  return json.items
+    .filter(isWikiImageItem)
+    .map((item) => {
+      // BUG FIX: Parse remote Wikipedia media JSON without `any` assumptions.
+      const src = readSource(item.srcset[item.srcset.length - 1]) ?? readSource(item.srcset[0]);
       const thumb = src ? (src.startsWith("//") ? `https:${src}` : src) : null;
       return {
-        title: (i.title ?? "") as string,
+        title: readString(item.title),
         thumb,
-        caption: (i.caption?.text ?? "") as string,
+        caption: readCaption(item.caption),
         score: 0,
       };
     })
@@ -79,7 +100,10 @@ async function fetchMedia(name: string): Promise<MediaItem[]> {
 async function fetchSummaryThumb(name: string): Promise<string | null> {
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`;
   const json = await fetchWithRetry(url);
-  return json?.thumbnail?.source ?? json?.originalimage?.source ?? null;
+  if (!isRecord(json)) return null;
+  const thumbnail = isRecord(json.thumbnail) && typeof json.thumbnail.source === "string" ? json.thumbnail.source : null;
+  const original = isRecord(json.originalimage) && typeof json.originalimage.source === "string" ? json.originalimage.source : null;
+  return thumbnail ?? original;
 }
 
 // Prime years: most of these legends peaked 1994-2010.

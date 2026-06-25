@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { initialsAvatar } from "@/lib/avatar";
-import type { StandingsRow } from "@/lib/standings";
+import type { MostLossesPlayer, StandingsRow } from "@/lib/standings";
 
 type MatchData = {
   id: string;
@@ -23,6 +23,7 @@ type DataShape = {
   players: PlayerData[];
   matches: MatchData[];
   standings: StandingsRow[];
+  mostLossesPlayer: MostLossesPlayer | null;
   lastUpdated: string;
   count: { players: number; matches: number };
 };
@@ -33,66 +34,84 @@ export default function Dashboard() {
   const [data, setData] = useState<DataShape | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [prevStandKey, setPrevStandKey] = useState<string>("");
   const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
-  const tickRef = useRef(0);
+  const [secondsAgo, setSecondsAgo] = useState(0);
+  const prevStandKeyRef = useRef("");
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function fetchData(silent = false) {
+  const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
       const res = await fetch("/api/data", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: DataShape = await res.json();
 
-      const newKey = json.standings.map((r) => `${r.playerId}:${r.pts}:${r.gf}:${r.ga}`).join("|");
+      const newKey = json.standings.map((row) => `${row.playerId}:${row.pts}:${row.gf}:${row.ga}`).join("|");
+      const prevStandKey = prevStandKeyRef.current;
       if (prevStandKey && newKey !== prevStandKey) {
         const changed = new Set<string>();
-        const prevMap = new Map(prevStandKey.split("|").map((p) => p.split(":")).map((a) => [a[0], a.slice(1).join(":")]));
-        for (const r of json.standings) {
-          const pk = prevMap.get(r.playerId);
-          if (pk && pk !== `${r.pts}:${r.gf}:${r.ga}`) changed.add(r.playerId);
+        const prevMap = new Map(
+          prevStandKey
+            .split("|")
+            .map((part) => part.split(":"))
+            .map((parts) => [parts[0], parts.slice(1).join(":")])
+        );
+
+        for (const row of json.standings) {
+          const previous = prevMap.get(row.playerId);
+          if (previous && previous !== `${row.pts}:${row.gf}:${row.ga}`) changed.add(row.playerId);
         }
+
         setFlashIds(changed);
-        setTimeout(() => setFlashIds(new Set()), 1500);
+        if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+        flashTimeoutRef.current = setTimeout(() => setFlashIds(new Set()), 1500);
       }
-      setPrevStandKey(newKey);
+
+      prevStandKeyRef.current = newKey;
       setData(json);
       setError(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      // BUG FIX: Background polling failures are caught silently instead of crashing the dashboard.
+      if (!silent) setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setRefreshing(false);
-      tickRef.current = 0;
+      setSecondsAgo(0);
     }
-  }
+  }, []);
 
   useEffect(() => {
     fetchData();
-    let interval: ReturnType<typeof setInterval> | undefined;
-    let counter: ReturnType<typeof setInterval> | undefined;
+    const interval = setInterval(() => fetchData(true), POLL_MS);
+    const counter = setInterval(() => setSecondsAgo((value) => value + 1), 1000);
 
-    interval = setInterval(() => fetchData(true), POLL_MS);
-    counter = setInterval(() => (tickRef.current += 1), 1000);
-
-    return () => { if (interval) clearInterval(interval); if (counter) clearInterval(counter); };
-  }, []);
-
-  const secondsAgo = tickRef.current;
+    return () => {
+      // BUG FIX: Clear polling, ticker, and flash timers on unmount to prevent leaked intervals.
+      clearInterval(interval);
+      clearInterval(counter);
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    };
+  }, [fetchData]);
 
   if (error && !data) {
-    return <div className="card p-8 text-center text-slate-300">⚠️ Could not load league data. <button className="btn-ghost mt-4" onClick={() => fetchData()}>Retry</button></div>;
+    return (
+      <div className="card p-8 text-center text-slate-300">
+        Could not load league data.
+        <button className="btn-ghost mt-4" onClick={() => fetchData()}>Retry</button>
+      </div>
+    );
   }
 
   if (!data) {
     return <DashboardSkeleton />;
   }
 
-  const completed = data.matches.filter((m) => m.status === "completed")
+  const completed = data.matches
+    .filter((match) => match.status === "completed")
     .sort((a, b) => new Date(b.playedAt ?? 0).getTime() - new Date(a.playedAt ?? 0).getTime());
-  const upcoming = data.matches.filter((m) => m.status === "scheduled")
-    .sort((a, b) => (a.homePlayer.name.localeCompare(b.homePlayer.name)));
+  const upcoming = data.matches
+    .filter((match) => match.status === "scheduled")
+    .sort((a, b) => a.homePlayer.name.localeCompare(b.homePlayer.name));
 
-  const topScorer = [...data.standings].sort((a, b) => b.gf - a.gf)[0];
   const bestGd = [...data.standings].sort((a, b) => b.gd - a.gd)[0];
   const played = completed.length;
   const total = data.matches.length;
@@ -103,21 +122,21 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-extrabold sm:text-3xl">League Standings</h1>
           <p className="text-sm text-slate-400">
-            {played}/{total} matches played · auto-updating
+            {played}/{total} matches played - auto-updating
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <span className={`inline-flex items-center gap-1.5 ${refreshing ? "text-pitch-400" : ""}`}>
             <span className={`h-2 w-2 rounded-full ${refreshing ? "bg-pitch-400 animate-ping" : "bg-slate-600"}`} />
-            {refreshing ? "Refreshing…" : `Updated ${secondsAgo}s ago`}
+            {refreshing ? "Refreshing..." : `Updated ${secondsAgo}s ago`}
           </span>
           <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => fetchData()}>Refresh</button>
         </div>
       </div>
 
-      {error && <div className="card border-red-800/60 bg-red-950/40 p-3 text-sm text-red-300">⚠️ {error}</div>}
+      {error && <div className="card border-red-800/60 bg-red-950/40 p-3 text-sm text-red-300">{error}</div>}
 
-      <Highlights topScorer={topScorer} bestGd={bestGd} />
+      <Highlights mostLossesPlayer={data.mostLossesPlayer} bestGd={bestGd} />
 
       <StandingsTable rows={data.standings} flashIds={flashIds} />
 
@@ -126,24 +145,25 @@ export default function Dashboard() {
   );
 }
 
-function Highlights({ topScorer, bestGd }: { topScorer?: StandingsRow; bestGd?: StandingsRow }) {
-  if (!topScorer && !bestGd) return null;
+function Highlights({ mostLossesPlayer, bestGd }: { mostLossesPlayer: MostLossesPlayer | null; bestGd?: StandingsRow }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
       <div className="card p-4">
-        <p className="text-xs uppercase tracking-wider text-slate-400">Top Scorer</p>
+        <p className="text-xs uppercase tracking-wider text-slate-400">Most Losses</p>
         <p className="mt-1 flex items-center gap-2 font-bold">
-          <img src={initialsAvatar(topScorer?.name ?? "", topScorer?.avatar)} alt="" className="h-7 w-7 rounded-md" />
-          {topScorer?.name ?? "—"}
-          <span className="ml-auto text-xl text-pitch-400">{topScorer?.gf ?? 0}</span>
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-red-950/80 text-red-300" aria-hidden="true">{"\u2198"}</span>
+          {mostLossesPlayer?.name && <span className="min-w-0 truncate">{mostLossesPlayer.name}</span>}
+          <span className="ml-auto text-xl text-red-300">{mostLossesPlayer?.losses ?? "\u2014"}</span>
         </p>
       </div>
       <div className="card p-4">
         <p className="text-xs uppercase tracking-wider text-slate-400">Best Goal Difference</p>
         <p className="mt-1 flex items-center gap-2 font-bold">
           <img src={initialsAvatar(bestGd?.name ?? "", bestGd?.avatar)} alt="" className="h-7 w-7 rounded-md" />
-          {bestGd?.name ?? "—"}
-          <span className={`ml-auto text-xl ${bestGd && bestGd.gd > 0 ? "text-pitch-400" : "text-slate-400"}`}>{bestGd ? (bestGd.gd > 0 ? `+${bestGd.gd}` : bestGd.gd) : "—"}</span>
+          {bestGd?.name ?? "\u2014"}
+          <span className={`ml-auto text-xl ${bestGd && bestGd.gd > 0 ? "text-pitch-400" : "text-slate-400"}`}>
+            {bestGd ? (bestGd.gd > 0 ? `+${bestGd.gd}` : bestGd.gd) : "\u2014"}
+          </span>
         </p>
       </div>
     </div>
@@ -171,32 +191,32 @@ function StandingsTable({ rows, flashIds }: { rows: StandingsRow[]; flashIds: Se
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => {
-              const top = i < CUTOFF;
-              const zebra = i % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/10";
-              const flash = flashIds.has(r.playerId);
+            {rows.map((row, index) => {
+              const top = index < CUTOFF;
+              const zebra = index % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/10";
+              const flash = flashIds.has(row.playerId);
               return (
-                <tr key={r.playerId} className={`border-t border-slate-800/80 ${zebra} ${flash ? "animate-pulseRow" : ""}`}>
+                <tr key={row.playerId} className={`border-t border-slate-800/80 ${zebra} ${flash ? "animate-pulseRow" : ""}`}>
                   <td className="px-3 py-2.5">
-                    <span className={`grid h-6 w-6 place-items-center rounded-md text-xs font-bold ${top ? "bg-pitch-600 text-white" : "bg-slate-800 text-slate-300"}`}>{i + 1}</span>
+                    <span className={`grid h-6 w-6 place-items-center rounded-md text-xs font-bold ${top ? "bg-pitch-600 text-white" : "bg-slate-800 text-slate-300"}`}>{index + 1}</span>
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
-                      <img src={initialsAvatar(r.name, r.avatar)} alt="" className="h-7 w-7 rounded-md" />
+                      <img src={initialsAvatar(row.name, row.avatar)} alt="" className="h-7 w-7 rounded-md" />
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold">{r.name}</span>
-                        <Form form={r.form} />
+                        <span className="font-semibold">{row.name}</span>
+                        <Form form={row.form} />
                       </div>
                     </div>
                   </td>
-                  <td className="px-2 py-2.5 text-center text-slate-300">{r.mp}</td>
-                  <td className="px-2 py-2.5 text-center text-slate-200">{r.w}</td>
-                  <td className="px-2 py-2.5 text-center text-slate-400">{r.d}</td>
-                  <td className="px-2 py-2.5 text-center text-slate-400">{r.l}</td>
-                  <td className="px-2 py-2.5 text-center text-slate-300">{r.gf}</td>
-                  <td className="px-2 py-2.5 text-center text-slate-400">{r.ga}</td>
-                  <td className="px-2 py-2.5 text-center text-slate-200">{r.gd > 0 ? `+${r.gd}` : r.gd}</td>
-                  <td className="px-2 py-2.5 text-center font-extrabold text-pitch-400">{r.pts}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-300">{row.mp}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-200">{row.w}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-400">{row.d}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-400">{row.l}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-300">{row.gf}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-400">{row.ga}</td>
+                  <td className="px-2 py-2.5 text-center text-slate-200">{row.gd > 0 ? `+${row.gd}` : row.gd}</td>
+                  <td className="px-2 py-2.5 text-center font-extrabold text-pitch-400">{row.pts}</td>
                 </tr>
               );
             })}
@@ -207,12 +227,12 @@ function StandingsTable({ rows, flashIds }: { rows: StandingsRow[]; flashIds: Se
   );
 }
 
-function Form({ form }: { form: ("W"|"D"|"L")[] }) {
+function Form({ form }: { form: ("W" | "D" | "L")[] }) {
   if (!form.length) return null;
   return (
     <span className="hidden sm:inline-flex gap-0.5">
-      {form.map((r, i) => (
-        <span key={i} className={`grid h-4 w-4 place-items-center rounded text-[10px] font-bold text-white ${r === "W" ? "bg-pitch-600" : r === "D" ? "bg-slate-500" : "bg-red-600/80"}`}>{r}</span>
+      {form.map((result, index) => (
+        <span key={`${result}-${index}`} className={`grid h-4 w-4 place-items-center rounded text-[10px] font-bold text-white ${result === "W" ? "bg-pitch-600" : result === "D" ? "bg-slate-500" : "bg-red-600/80"}`}>{result}</span>
       ))}
     </span>
   );
@@ -239,27 +259,30 @@ function FixtureList({ title, matches }: { title: string; matches: MatchData[] }
         <p className="py-8 text-center text-sm text-slate-500">No {played ? "completed" : "scheduled"} matches yet.</p>
       ) : (
         <ul className="space-y-2">
-          {matches.map((m) => {
-            const homeG = m.homeGoals != null ? m.homeGoals : "—";
-            const awayG = m.awayGoals != null ? m.awayGoals : "—";
+          {matches.map((match) => {
+            const homeScore = match.homeGoals;
+            const awayScore = match.awayGoals;
+            const homeDisplay = homeScore != null ? homeScore : "\u2014";
+            const awayDisplay = awayScore != null ? awayScore : "\u2014";
+
             return (
-              <li key={m.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+              <li key={match.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-3">
                 <div className="flex flex-1 items-center justify-end gap-2 text-right">
-                  <span className={`truncate ${homeG > awayG && played ? "font-bold text-slate-100" : "text-slate-300"}`}>{m.homePlayer.name}</span>
-                  <img src={initialsAvatar(m.homePlayer.name, null)} alt="" className="h-6 w-6 rounded-md" />
-                  <LegTag leg={m.leg} home />
+                  <span className={`truncate ${played && homeScore != null && awayScore != null && homeScore > awayScore ? "font-bold text-slate-100" : "text-slate-300"}`}>{match.homePlayer.name}</span>
+                  <img src={initialsAvatar(match.homePlayer.name, null)} alt="" className="h-6 w-6 rounded-md" />
+                  <LegTag leg={match.leg} home />
                 </div>
                 <div className="flex flex-col items-center px-2">
                   {played ? (
-                    <span className="grid min-w-[3rem] place-items-center rounded-lg bg-slate-950 px-2 py-1 text-lg font-extrabold tabular-nums">{homeG}:{awayG}</span>
+                    <span className="grid min-w-[3rem] place-items-center rounded-lg bg-slate-950 px-2 py-1 text-lg font-extrabold tabular-nums">{homeDisplay}:{awayDisplay}</span>
                   ) : (
                     <span className="grid min-w-[3rem] place-items-center rounded-lg border border-slate-700 px-2 py-1 text-sm font-bold text-slate-400">vs</span>
                   )}
                 </div>
-                <LegTag leg={m.leg} home={false} />
-                <img src={initialsAvatar(m.awayPlayer.name, null)} alt="" className="h-6 w-6 rounded-md" />
+                <LegTag leg={match.leg} home={false} />
+                <img src={initialsAvatar(match.awayPlayer.name, null)} alt="" className="h-6 w-6 rounded-md" />
                 <div className="flex flex-1 items-center gap-2">
-                  <span className={`truncate ${awayG > homeG && played ? "font-bold text-slate-100" : "text-slate-300"}`}>{m.awayPlayer.name}</span>
+                  <span className={`truncate ${played && homeScore != null && awayScore != null && awayScore > homeScore ? "font-bold text-slate-100" : "text-slate-300"}`}>{match.awayPlayer.name}</span>
                 </div>
               </li>
             );
@@ -270,8 +293,7 @@ function FixtureList({ title, matches }: { title: string; matches: MatchData[] }
   );
 }
 
-function LegTag({ leg, home }: { leg: string; home: boolean }) {
-  // leg is recorded from perspective of the lower-indexed player; show H for home player, A for away.
+function LegTag({ home }: { leg: string; home: boolean }) {
   const tag = home ? "H" : "A";
   return <span className="hidden sm:inline-block rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300" title={`${tag === "H" ? "Home" : "Away"} leg`}>{tag}</span>;
 }
@@ -287,11 +309,11 @@ function DashboardSkeleton() {
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <tbody>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <tr key={i} className="border-t border-slate-800/80">
+            {Array.from({ length: 8 }).map((_, rowIndex) => (
+              <tr key={rowIndex} className="border-t border-slate-800/80">
                 <td className="px-3 py-3"><div className="skeleton h-6 w-6" /></td>
                 <td className="px-3 py-3"><div className="skeleton h-7 w-40" /></td>
-                {Array.from({ length: 8 }).map((__, j) => <td key={j} className="px-2 py-3"><div className="skeleton mx-auto h-4 w-6" /></td>)}
+                {Array.from({ length: 8 }).map((__, cellIndex) => <td key={cellIndex} className="px-2 py-3"><div className="skeleton mx-auto h-4 w-6" /></td>)}
               </tr>
             ))}
           </tbody>

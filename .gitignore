@@ -17,4 +17,8 @@
 # misc
 .DS_Store
 *.pem
-next-env.d.tsdevlog.txt
+next-env.d.ts
+devlog.txt
+
+# typescript build cache
+tsconfig.tsbuildinfo
