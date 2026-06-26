@@ -111,15 +111,13 @@ export function computeStandings(
 }
 
 export function fixturesTotal(n: number): number {
-  return n * (n - 1);
+  return n <= 1 ? 0 : n * (n - 1);
 }
 
 type LossesAccumulator = {
   name: string;
   losses: number;
   pts: number;
-  gf: number;
-  ga: number;
   gd: number;
 };
 
@@ -129,34 +127,18 @@ function hasCompletedScore(match: Match): match is Match & { homeGoals: number; 
 
 export function getMostLossesPlayer(matches: Match[], players: Player[]): MostLossesPlayer | null {
   const table = new Map<string, LossesAccumulator>();
-
   for (const player of players) {
-    table.set(player.id, {
-      name: player.name,
-      losses: 0,
-      pts: 0,
-      gf: 0,
-      ga: 0,
-      gd: 0,
-    });
+    table.set(player.id, { name: player.name, losses: 0, pts: 0, gd: 0 });
   }
 
   let completedMatches = 0;
-
   for (const match of matches) {
     if (!hasCompletedScore(match)) continue;
-
     const home = table.get(match.homePlayerId);
     const away = table.get(match.awayPlayerId);
     if (!home || !away) continue;
 
     completedMatches++;
-    home.gf += match.homeGoals;
-    home.ga += match.awayGoals;
-    away.gf += match.awayGoals;
-    away.ga += match.homeGoals;
-
-    // BUG FIX: Count losses only for the losing player while draws add points to both sides.
     if (match.homeGoals > match.awayGoals) {
       home.pts += 3;
       away.losses++;
@@ -167,21 +149,14 @@ export function getMostLossesPlayer(matches: Match[], players: Player[]): MostLo
       home.pts += 1;
       away.pts += 1;
     }
-
-    home.gd = home.gf - home.ga;
-    away.gd = away.gf - away.ga;
+    home.gd += match.homeGoals - match.awayGoals;
+    away.gd += match.awayGoals - match.homeGoals;
   }
 
   if (completedMatches === 0) return null;
 
-  const [player] = [...table.values()].sort((a, b) =>
-    b.losses - a.losses ||
-    // BUG FIX: Ties on losses pick the player ranked lowest in the standings.
-    a.pts - b.pts ||
-    a.gd - b.gd ||
-    a.gf - b.gf ||
-    b.name.localeCompare(a.name)
+  const [player] = [...table.values()].sort(
+    (a, b) => b.losses - a.losses || a.pts - b.pts || a.gd - b.gd || b.name.localeCompare(a.name)
   );
-
   return player ? { name: player.name, losses: player.losses } : null;
 }
