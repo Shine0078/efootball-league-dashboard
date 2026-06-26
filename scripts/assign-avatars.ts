@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -43,34 +44,30 @@ interface MediaItem {
   score: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+interface WikipediaMediaItem {
+  type?: string;
+  title?: string;
+  srcset?: Array<{ src?: string }>;
+  caption?: { text?: string };
 }
 
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : "";
+interface WikipediaMediaResponse {
+  items?: WikipediaMediaItem[];
 }
 
-function readSource(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.src === "string" ? value.src : undefined;
+interface WikipediaSummaryResponse {
+  thumbnail?: { source?: string };
+  originalimage?: { source?: string };
 }
 
-function isWikiImageItem(value: unknown): value is { srcset: unknown[]; title?: unknown; caption?: unknown } {
-  return isRecord(value) && value.type === "image" && Array.isArray(value.srcset) && value.srcset.length > 0;
-}
-
-function readCaption(value: unknown): string {
-  return isRecord(value) && isRecord(value.text) ? "" : isRecord(value) && typeof value.text === "string" ? value.text : "";
-}
-
-async function fetchWithRetry(url: string, retries = 4): Promise<unknown | null> {
+async function fetchWithRetry<T>(url: string, retries = 4): Promise<T | null> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, { headers: { "User-Agent": "efootball-league-dashboard/1.0 (seed script)" } });
       if (res.status === 429 || res.status >= 500) { await sleep(700 * attempt); continue; }
       if (res.status === 404) return null;
       if (!res.ok) { await sleep(400 * attempt); continue; }
-      return await res.json();
+      return await res.json() as T;
     } catch { await sleep(400 * attempt); }
   }
   return null;
@@ -78,18 +75,18 @@ async function fetchWithRetry(url: string, retries = 4): Promise<unknown | null>
 
 async function fetchMedia(name: string): Promise<MediaItem[]> {
   const url = `https://en.wikipedia.org/api/rest_v1/page/media-list/${encodeURIComponent(name)}`;
-  const json = await fetchWithRetry(url);
-  if (!isRecord(json) || !Array.isArray(json.items)) return [];
-  return json.items
-    .filter(isWikiImageItem)
+  const json = await fetchWithRetry<WikipediaMediaResponse>(url);
+  if (!json) return [];
+  return (json.items ?? [])
+    .filter((item) => item.type === "image" && Array.isArray(item.srcset) && item.srcset.length)
     .map((item) => {
-      // BUG FIX: Parse remote Wikipedia media JSON without `any` assumptions.
-      const src = readSource(item.srcset[item.srcset.length - 1]) ?? readSource(item.srcset[0]);
+      const srcset = item.srcset!;
+      const src = srcset[srcset.length - 1]?.src ?? srcset[0]?.src;
       const thumb = src ? (src.startsWith("//") ? `https:${src}` : src) : null;
       return {
-        title: readString(item.title),
+        title: item.title ?? "",
         thumb,
-        caption: readCaption(item.caption),
+        caption: item.caption?.text ?? "",
         score: 0,
       };
     })
@@ -99,11 +96,8 @@ async function fetchMedia(name: string): Promise<MediaItem[]> {
 // Fallback: REST summary thumbnail (the article's lead image).
 async function fetchSummaryThumb(name: string): Promise<string | null> {
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`;
-  const json = await fetchWithRetry(url);
-  if (!isRecord(json)) return null;
-  const thumbnail = isRecord(json.thumbnail) && typeof json.thumbnail.source === "string" ? json.thumbnail.source : null;
-  const original = isRecord(json.originalimage) && typeof json.originalimage.source === "string" ? json.originalimage.source : null;
-  return thumbnail ?? original;
+  const json = await fetchWithRetry<WikipediaSummaryResponse>(url);
+  return json?.thumbnail?.source ?? json?.originalimage?.source ?? null;
 }
 
 // Prime years: most of these legends peaked 1994-2010.
