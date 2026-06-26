@@ -22,7 +22,7 @@ type DataShape = { players: Player[]; matches: Match[]; count: { players: number
 
 export default function AdminPanel({ email, role }: { email: string; role: string }) {
   const [data, setData] = useState<DataShape | null>(null);
-  const [tab, setTab] = useState<"scores" | "players" | "audit">("scores");
+  const [tab, setTab] = useState<"scores" | "players" | "leagues" | "audit">("scores");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -71,9 +71,119 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
       <div className="card mx-auto max-w-xl p-6 text-center text-sm text-red-300">
         <p>{loadError}</p>
         <button className="btn-ghost mt-4" onClick={() => void load()}>Retry</button>
-      </div>
-    );
+</div>
+  );
+}
+
+type LeagueData = { id: string; name: string; type: string; status: string; createdAt: string; _count: { players: number; matches: number } };
+
+function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<void> }) {
+  const [leagues, setLeagues] = useState<LeagueData[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"normal" | "knockout">("normal");
+  const [playerInput, setPlayerInput] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/leagues", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = await res.json() as { leagues: LeagueData[] };
+      setLeagues(j.leagues);
+      setErr(null);
+    } catch (error: unknown) {
+      setErr(error instanceof Error ? error.message : "Could not load leagues");
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const players = playerInput.split("\n").map((p) => p.trim()).filter(Boolean);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    if (players.length < 2) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/leagues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), type, players }),
+      });
+      await apiOk(res, `Created ${type} league "${name.trim()}"`);
+      setName(""); setPlayerInput(""); setType("normal");
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Could not create league");
+    } finally { setCreating(false); }
   }
+
+  async function remove(l: LeagueData) {
+    if (!confirm(`Delete league "${l.name}"? This removes all players and matches in it.`)) return;
+    setDeleting(l.id);
+    try {
+      const res = await fetch(`/api/leagues/${l.id}`, { method: "DELETE" });
+      await apiOk(res, `Deleted league "${l.name}"`);
+    } catch (error: unknown) {
+      alert(error instanceof Error ? error.message : "Could not delete league");
+    } finally { setDeleting(null); }
+  }
+
+  if (err) return <div className="card p-4 text-sm text-red-300">⚠️ {err}</div>;
+  if (!leagues) return <div className="card p-4 text-sm text-slate-400">Loading leagues…</div>;
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+      <div className="card divide-y divide-slate-800/70">
+        {leagues.map((l) => (
+          <div key={l.id} className="flex items-center gap-3 p-3">
+            <span className={`grid h-7 w-7 place-items-center rounded-md text-xs font-bold ${l.type === "knockout" ? "bg-amber-500/20 text-amber-300" : "bg-pitch-600/20 text-pitch-300"}`}>
+              {l.type === "knockout" ? "KO" : "L"}
+            </span>
+            <div className="flex-1">
+              <p className="font-semibold">{l.name}</p>
+              <p className="text-xs text-slate-500">
+                {l.type === "knockout" ? "Knockout" : "Round-robin"} · {l._count.players} players · {l._count.matches} matches · {new Date(l.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            <a href={`/?league=${l.id}`} className="btn-ghost !px-3 !py-1.5 text-xs" target="_blank" rel="noopener">View</a>
+            <button className="btn-ghost !px-3 !py-1.5 text-xs text-red-300 hover:border-red-700" disabled={deleting === l.id} onClick={() => remove(l)}>Delete</button>
+          </div>
+        ))}
+        {leagues.length === 0 && <div className="p-8 text-center text-sm text-slate-500">No leagues yet. Create one on the right.</div>}
+      </div>
+
+      <form onSubmit={create} className="card h-fit space-y-3 p-4">
+        <h2 className="font-bold">Create League</h2>
+        <label className="block text-sm">
+          <span className="text-slate-300">League Name</span>
+          <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
+        </label>
+        <div>
+          <span className="text-sm text-slate-300">League Type</span>
+          <div className="mt-1 flex gap-2">
+            <button type="button" onClick={() => setType("normal")} className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${type === "normal" ? "border-pitch-500 bg-pitch-600/20 text-pitch-300" : "border-white/10 text-slate-300 hover:bg-slate-800"}`}>
+              Round-Robin
+            </button>
+            <button type="button" onClick={() => setType("knockout")} className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${type === "knockout" ? "border-amber-500 bg-amber-600/20 text-amber-300" : "border-white/10 text-slate-300 hover:bg-slate-800"}`}>
+              Knockout
+            </button>
+          </div>
+        </div>
+        <label className="block text-sm">
+          <span className="text-slate-300">Players (one per line)</span>
+          <textarea className="input mt-1 min-h-[120px]" value={playerInput} onChange={(e) => setPlayerInput(e.target.value)} placeholder={`Sam\nAlex\nJordan\nCasey`} />
+          <p className="mt-1 text-xs text-slate-500">{players.length} player{players.length !== 1 ? "s" : ""} · min 2, max 64</p>
+        </label>
+        <button className="btn-primary w-full" disabled={creating || !name.trim() || players.length < 2}>
+          {creating ? "Creating…" : "Create League"}
+        </button>
+      </form>
+    </div>
+  );
+}
   if (!data) return <div className="mx-auto max-w-3xl py-10 text-sm text-slate-400">Loading admin…</div>;
 
   return (
@@ -90,10 +200,10 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
       </div>
 
       <div className="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
-        {(["scores", "players", "audit"] as const).map((t) => (
+        {(["scores", "players", "leagues", "audit"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold capitalize transition ${tab === t ? "bg-pitch-600 text-white" : "text-slate-300 hover:bg-slate-800"}`}>
-            {t === "scores" ? "Fixtures & Scores" : t === "players" ? "Players" : "Audit Log"}
+            {t === "scores" ? "Fixtures & Scores" : t === "players" ? "Players" : t === "leagues" ? "Leagues" : "Audit Log"}
           </button>
         ))}
       </div>
@@ -102,6 +212,7 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
 
       {tab === "scores" && <ScoresTab data={data} apiOk={apiOk} patchMatch={patchMatch} />}
       {tab === "players" && <PlayersTab data={data} apiOk={apiOk} />}
+      {tab === "leagues" && <LeaguesTab apiOk={apiOk} />}
       {tab === "audit" && <AuditTab />}
     </div>
   );
