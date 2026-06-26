@@ -149,7 +149,7 @@ export default function Dashboard() {
         aria-hidden="true"
         className="select-none text-center text-[8px] leading-none tracking-[0.08em] text-white"
       >
-        May The best player Win !!!
+        May The  player Win !!!
       </p>
       <section className="hero-card">
         <span className="hero-orb hero-orb-one" />
