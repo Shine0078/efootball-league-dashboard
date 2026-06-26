@@ -17,8 +17,10 @@
 # misc
 .DS_Store
 *.pem
+*.tsbuildinfo
 next-env.d.ts
 devlog.txt
+.codex-dev.*.log
+nul
 
-# typescript build cache
-tsconfig.tsbuildinfo
+.vercel
