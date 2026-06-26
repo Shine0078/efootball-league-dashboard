@@ -16,8 +16,8 @@ export interface StandingsRow {
 }
 
 export interface CompletedMatchWithPlayers extends Match {
-  homePlayer: Pick<Player, "id" | "name">;
-  awayPlayer: Pick<Player, "id" | "name">;
+  homePlayer: Pick<Player, "id" | "name"> | null;
+  awayPlayer: Pick<Player, "id" | "name"> | null;
 }
 
 export type MostLossesPlayer = { name: string; losses: number };
@@ -57,6 +57,7 @@ export function computeStandings(
     });
 
   for (const m of sorted) {
+    if (!m.homePlayerId || !m.awayPlayerId) continue;
     const home = map.get(m.homePlayerId);
     const away = map.get(m.awayPlayerId);
     if (!home || !away) continue;
@@ -134,6 +135,7 @@ export function getMostLossesPlayer(matches: Match[], players: Player[]): MostLo
   let completedMatches = 0;
   for (const match of matches) {
     if (!hasCompletedScore(match)) continue;
+    if (!match.homePlayerId || !match.awayPlayerId) continue;
     const home = table.get(match.homePlayerId);
     const away = table.get(match.awayPlayerId);
     if (!home || !away) continue;
