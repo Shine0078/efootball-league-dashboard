@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { initialsAvatar } from "@/lib/avatar";
 import type { MostLossesPlayer, StandingsRow } from "@/lib/standings";
+import KnockoutBracket, { type BracketRoundData } from "@/components/KnockoutBracket";
 
 type MatchData = {
   id: string;
@@ -19,11 +21,17 @@ type MatchData = {
 
 type PlayerData = { id: string; name: string; avatar: string | null };
 
+type LeagueInfo = { id: string; name: string; type: string; status: string };
+
 type DataShape = {
+  league: LeagueInfo | null;
+  leagues: LeagueInfo[];
+  leagueType: string;
   players: PlayerData[];
   matches: MatchData[];
   standings: StandingsRow[];
   mostLossesPlayer: MostLossesPlayer | null;
+  bracket?: BracketRoundData[];
   lastUpdated: string | null;
   generatedAt: string;
   count: { players: number; matches: number };
@@ -44,13 +52,18 @@ export default function Dashboard() {
   const previousStandingsRef = useRef(new Map<string, string>());
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchingRef = useRef(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const activeLeagueId = searchParams.get("league") ?? "";
 
   const fetchData = useCallback(async (silent = false) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
     if (!silent) setRefreshing(true);
     try {
-      const res = await fetch("/api/data", { cache: "no-store" });
+      const url = activeLeagueId ? `/api/data?leagueId=${activeLeagueId}` : "/api/data";
+      const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: DataShape = await res.json();
 
@@ -113,7 +126,7 @@ export default function Dashboard() {
       clearInterval(clockInterval);
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
-  }, [fetchData]);
+  }, [fetchData, activeLeagueId]);
 
   const secondsAgo = lastFetchedAt == null ? 0 : Math.max(0, Math.floor((now - lastFetchedAt) / 1000));
 
@@ -200,6 +213,28 @@ export default function Dashboard() {
 
       {error && <div className="card border-red-800/60 bg-red-950/40 p-3 text-sm text-red-300">{error}</div>}
 
+      {data.leagues.length > 0 && (
+        <LeagueSelector
+          leagues={data.leagues}
+          activeLeagueId={activeLeagueId}
+          onSelect={(id) => {
+            const params = new URLSearchParams(searchParams);
+            if (id) params.set("league", id);
+            else params.delete("league");
+            router.replace(`${pathname}?${params.toString()}`);
+          }}
+        />
+      )}
+
+      {data.leagueType === "knockout" ? (
+        <KnockoutSection
+          bracket={data.bracket ?? []}
+          league={data.league}
+          players={data.players.length}
+          matches={data.matches.length}
+        />
+      ) : (
+        <>
       <OverviewStats
         players={data.players.length}
         remaining={remaining}
@@ -227,6 +262,8 @@ export default function Dashboard() {
         selectedPlayerId={fixturePlayerId}
         onSelectedPlayerChange={setFixturePlayerId}
       />
+        </>
+      )}
     </div>
   );
 }
@@ -482,8 +519,69 @@ function FixturesSection({
       <div className="grid gap-6 lg:grid-cols-2">
         <FixtureList title="Played" matches={filteredCompleted} />
         <FixtureList title="Upcoming" matches={filteredUpcoming} />
-      </div>
+</div>
     </section>
+  );
+}
+
+function LeagueSelector({
+  leagues,
+  activeLeagueId,
+  onSelect,
+}: {
+  leagues: { id: string; name: string; type: string; status: string }[];
+  activeLeagueId: string;
+  onSelect: (id: string) => void;
+}) {
+  if (leagues.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={() => onSelect("")}
+        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+          !activeLeagueId ? "border-pitch-500 bg-pitch-600/20 text-pitch-300" : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/20"
+        }`}
+      >
+        Default League
+      </button>
+      {leagues.map((l) => (
+        <button
+          key={l.id}
+          onClick={() => onSelect(l.id)}
+          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+            activeLeagueId === l.id ? "border-pitch-500 bg-pitch-600/20 text-pitch-300" : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/20"
+          }`}
+        >
+          {l.name}
+          {l.type === "knockout" && <span className="ml-1.5 text-[9px] text-amber-400">KO</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function KnockoutSection({
+  bracket,
+  league,
+  players,
+  matches,
+}: {
+  bracket: BracketRoundData[];
+  league: { id: string; name: string; type: string; status: string } | null;
+  players: number;
+  matches: number;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-pitch-400">Knockout Stage</p>
+          <h2 className="mt-1 text-2xl font-black tracking-tight">{league?.name ?? "Knockout Bracket"}</h2>
+          <p className="mt-1 text-xs text-slate-400">{players} players · {matches} matches</p>
+        </div>
+      </div>
+      <KnockoutBracket rounds={bracket} />
+    </div>
   );
 }
 
