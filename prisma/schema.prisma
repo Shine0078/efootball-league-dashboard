@@ -7,35 +7,57 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model League {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   @default("normal") // "normal" | "knockout"
+  status    String   @default("active") // "active" | "completed" | "archived"
+  createdAt DateTime @default(now())
+
+  players Player[]
+  matches Match[]
+
+  @@index([status])
+}
+
 model Player {
   id        String   @id @default(cuid())
   name      String
   avatar    String?
   order     Int      @default(0)
+  leagueId  String?
   createdAt DateTime @default(now())
 
-  homeMatches Match[] @relation("HomePlayer")
-  awayMatches Match[] @relation("AwayPlayer")
+  league      League? @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  homeMatches Match[]  @relation("HomePlayer")
+  awayMatches Match[]  @relation("AwayPlayer")
 
   @@index([order])
+  @@index([leagueId])
 }
 
 model Match {
   id           String    @id @default(cuid())
-  homePlayerId String
-  awayPlayerId String
+  homePlayerId String?
+  awayPlayerId String?
   homeGoals    Int?
   awayGoals    Int?
   playedAt     DateTime?
-  leg          String // "home" | "away" relative to the first leg pairing
-  status       String    @default("scheduled") // "scheduled" | "completed"
+  leg          String    @default("") // "home" | "away" for normal leagues, "" for knockout
+  status       String    @default("scheduled") // "scheduled" | "completed" | "bye"
+  leagueId     String?
+  round        Int? // null for normal, 0-indexed round number for knockout
+  nextMatchId  String? // for knockout: the match the winner advances to
+  bracketPosition Int? // position within the round
+  createdAt    DateTime  @default(now())
 
-  homePlayer Player @relation("HomePlayer", fields: [homePlayerId], references: [id], onDelete: Cascade)
-  awayPlayer Player @relation("AwayPlayer", fields: [awayPlayerId], references: [id], onDelete: Cascade)
+  homePlayer Player?  @relation("HomePlayer", fields: [homePlayerId], references: [id], onDelete: Cascade)
+  awayPlayer Player?  @relation("AwayPlayer", fields: [awayPlayerId], references: [id], onDelete: Cascade)
+  league     League?  @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 
-  // Ensure exactly one fixture per (home,away) pairing
-  @@unique([homePlayerId, awayPlayerId])
   @@index([status])
+  @@index([leagueId])
+  @@index([round])
 }
 
 model Admin {
