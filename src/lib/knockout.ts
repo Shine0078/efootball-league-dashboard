@@ -8,12 +8,14 @@ export function determineWinner(match: {
   homePlayerId: string | null;
   awayPlayerId: string | null;
   status: string;
+  winnerOverride?: string | null;
 }): string | null {
   if (match.status === "bye") return match.homePlayerId ?? match.awayPlayerId;
   if (match.status !== "completed") return null;
   if (match.homeGoals == null || match.awayGoals == null) return null;
   if (match.homeGoals > match.awayGoals) return match.homePlayerId;
   if (match.awayGoals > match.homeGoals) return match.awayPlayerId;
+  if (match.winnerOverride) return match.winnerOverride;
   return null;
 }
 
@@ -90,6 +92,7 @@ export interface BracketMatchView {
   awayGoals: number | null;
   status: string;
   playedAt: string | null;
+  winnerOverride: string | null;
 }
 
 export function buildBracketView(
@@ -121,6 +124,7 @@ export function buildBracketView(
       awayGoals: m.awayGoals,
       status: m.status,
       playedAt: m.playedAt ? m.playedAt.toISOString() : null,
+      winnerOverride: m.winnerOverride ?? null,
     }));
 
     rounds.push({
