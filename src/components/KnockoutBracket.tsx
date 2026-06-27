@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { initialsAvatar } from "@/lib/avatar";
 
@@ -11,6 +11,7 @@ export interface BracketMatchData {
   homeGoals: number | null;
   awayGoals: number | null;
   status: string;
+  winnerOverride: string | null;
 }
 
 export interface BracketRoundData {
@@ -69,8 +70,9 @@ function BracketMatch({
 }) {
   const homeG = match.homeGoals;
   const awayG = match.awayGoals;
-  const homeWinner = match.status === "completed" && homeG != null && awayG != null && homeG > awayG;
-  const awayWinner = match.status === "completed" && homeG != null && awayG != null && awayG > awayG;
+  const isDraw = match.status === "completed" && homeG != null && awayG != null && homeG === awayG;
+  const homeWinner = match.status === "completed" && homeG != null && awayG != null && (homeG > awayG || (isDraw && match.winnerOverride === match.homePlayer?.id));
+  const awayWinner = match.status === "completed" && homeG != null && awayG != null && (awayG > homeG || (isDraw && match.winnerOverride === match.awayPlayer?.id));
   const isBye = match.status === "bye";
 
   return (
@@ -83,7 +85,7 @@ function BracketMatch({
     >
       {isFinal && (
         <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-pitch-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-          🏆
+          ðŸ†
         </span>
       )}
 
@@ -98,6 +100,7 @@ function BracketMatch({
         <div className="flex items-center gap-1">
           <div className="h-px flex-1 bg-white/[0.06]" />
           <span className="text-[9px] font-bold uppercase tracking-wider text-slate-600">vs</span>
+          {isDraw && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">pens</span>}
           <div className="h-px flex-1 bg-white/[0.06]" />
         </div>
         <PlayerSlot
