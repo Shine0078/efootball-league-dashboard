@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { initialsAvatar } from "@/lib/avatar";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type Player = { id: string; name: string; avatar: string | null };
 type Match = {
@@ -26,6 +27,12 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<{title:string;message:string;destructive?:boolean} | null>(null);
+  const pendingRef = useRef<(() => void) | null>(null);
+  const confirmAction = useCallback((title:string,msg:string,onOk:()=>void,destructive?:boolean) => {
+    setDialog({title,message:msg,destructive});
+    pendingRef.current = onOk;
+  },[]);
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +71,18 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
     setBusy(true);
     await fetch("/api/auth", { method: "DELETE" });
     location.href = "/admin/login";
+  }
+
+  function handleDialogConfirm() {
+    if (pendingRef.current) {
+      pendingRef.current();
+      pendingRef.current = null;
+    }
+  }
+
+  function handleDialogCancel() {
+    setDialog(null);
+    pendingRef.current = null;
   }
 
   if (loadError && !data) {
@@ -121,18 +140,23 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
   }
 
   async function remove(l: LeagueData) {
-    if (!confirm(`Delete league "${l.name}"? This removes all players and matches in it.`)) return;
-    setDeleting(l.id);
-    try {
-      const res = await fetch(`/api/leagues/${l.id}`, { method: "DELETE" });
-      await apiOk(res, `Deleted league "${l.name}"`);
-    } catch (error: unknown) {
-      alert(error instanceof Error ? error.message : "Could not delete league");
-    } finally { setDeleting(null); }
+    setDialog({title:'Delete league?',message:'Permanently delete this league and all its data?',destructive:true});
+    pendingRef.current = async () => {
+      setDialog(null);
+      setDeleting(l.id);
+      try {
+        const res = await fetch(`/api/leagues/${l.id}`, { method: "DELETE" });
+        await apiOk(res, `Deleted league "${l.name}"`);
+      } catch (error: unknown) {
+        alert(error instanceof Error ? error.message : "Could not delete league");
+      } finally { setDeleting(null); }
+    };
   }
 
-  if (err) return <div className="card p-4 text-sm text-red-300">⚠️ {err}</div>;
-  if (!leagues) return <div className="card p-4 text-sm text-slate-400">Loading leagues…</div>;
+  if (err) return <div className="card p-4 text-sm text-red-300">âš ï¸ {err}</div>;
+  if (!leagues) return <div className="card p-4 text-sm text-slate-400">Loading leaguesâ€¦</div>;
+
+  const knockoutLeagues = leagues.filter(l => l.type === 'knockout');
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
@@ -145,7 +169,7 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
             <div className="flex-1">
               <p className="font-semibold">{l.name}</p>
               <p className="text-xs text-slate-500">
-                {l.type === "knockout" ? "Knockout" : "Round-robin"} · {l._count.players} players · {l._count.matches} matches · {new Date(l.createdAt).toLocaleDateString()}
+                {l.type === "knockout" ? "Knockout" : "Round-robin"} Â· {l._count.players} players Â· {l._count.matches} matches Â· {new Date(l.createdAt).toLocaleDateString()}
               </p>
             </div>
             <a href={`/?league=${l.id}`} className="btn-ghost !px-3 !py-1.5 text-xs" target="_blank" rel="noopener">View</a>
@@ -175,23 +199,23 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
         <label className="block text-sm">
           <span className="text-slate-300">Players (one per line)</span>
           <textarea className="input mt-1 min-h-[120px]" value={playerInput} onChange={(e) => setPlayerInput(e.target.value)} placeholder={`Sam\nAlex\nJordan\nCasey`} />
-          <p className="mt-1 text-xs text-slate-500">{players.length} player{players.length !== 1 ? "s" : ""} · min 2, max 64</p>
+          <p className="mt-1 text-xs text-slate-500">{players.length} player{players.length !== 1 ? "s" : ""} Â· min 2, max 64</p>
         </label>
         <button className="btn-primary w-full" disabled={creating || !name.trim() || players.length < 2}>
-          {creating ? "Creating…" : "Create League"}
+          {creating ? "Creatingâ€¦" : "Create League"}
         </button>
       </form>
     </div>
   );
 }
-  if (!data) return <div className="mx-auto max-w-3xl py-10 text-sm text-slate-400">Loading admin…</div>;
+  if (!data) return <div className="mx-auto max-w-3xl py-10 text-sm text-slate-400">Loading adminâ€¦</div>;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold sm:text-3xl">Admin Panel</h1>
-          <p className="text-sm text-slate-400">Signed in as <span className="text-slate-200">{email}</span> · <span className="badge">{role}</span></p>
+          <p className="text-sm text-slate-400">Signed in as <span className="text-slate-200">{email}</span> Â· <span className="badge">{role}</span></p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/" className="btn-ghost text-xs">View dashboard</Link>
@@ -208,17 +232,18 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
         ))}
       </div>
 
-      {toast && <div className="card border-pitch-700/60 bg-pitch-950/40 px-4 py-2 text-sm text-pitch-300">✓ {toast}</div>}
+      {toast && <div className="card border-pitch-700/60 bg-pitch-950/40 px-4 py-2 text-sm text-pitch-300">âœ“ {toast}</div>}
 
-      {tab === "scores" && <ScoresTab data={data} apiOk={apiOk} patchMatch={patchMatch} />}
-      {tab === "players" && <PlayersTab data={data} apiOk={apiOk} />}
+      {tab === "scores" && <ScoresTab data={data} apiOk={apiOk} patchMatch={patchMatch} setDialog={setDialog} pendingRef={pendingRef} />}
+      {tab === "players" && <PlayersTab data={data} apiOk={apiOk} setDialog={setDialog} pendingRef={pendingRef} />}
       {tab === "leagues" && <LeaguesTab apiOk={apiOk} />}
       {tab === "audit" && <AuditTab />}
+      <ConfirmDialog open={dialog!==null} title={dialog?.title??''} message={dialog?.message??''} destructive={dialog?.destructive} onConfirm={handleDialogConfirm} onCancel={handleDialogCancel} />
     </div>
   );
 }
 
-function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: Response, ok: string) => Promise<void>; patchMatch: (id: string, patch: Partial<Match>) => void }) {
+function ScoresTab({ data, apiOk, patchMatch, setDialog, pendingRef }: { data: DataShape; apiOk: (res: Response, ok: string) => Promise<void>; patchMatch: (id: string, patch: Partial<Match>) => void; setDialog: (d: any) => void; pendingRef: { current: (() => void) | null } }) {
   const PAGE_SIZE = 20;
   const [filter, setFilter] = useState<"all" | "scheduled" | "completed">("all");
   const [q, setQ] = useState("");
@@ -281,9 +306,11 @@ function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: 
   }
 
   async function reset(m: Match) {
-    if (!confirm(`Reset score for ${m.homePlayer.name} vs ${m.awayPlayer.name}?`)) return;
-    setSaving(m.id);
-    try {
+    setDialog({title:'Reset score?',message:'Reset score for '+m.homePlayer.name+' vs '+m.awayPlayer.name+'?',destructive:true});
+    pendingRef.current = async () => {
+      setDialog(null);
+      setSaving(m.id);
+      try {
       const res = await fetch(`/api/matches/${m.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -296,13 +323,14 @@ function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: 
     } catch (error: unknown) {
       alert(error instanceof Error ? error.message : "Could not reset score");
     } finally { setSaving(null); }
+    };
   }
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         <div className="relative w-full max-w-xs">
-          <input className="input pr-9" placeholder="Search players…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input pr-9" placeholder="Search playersâ€¦" value={q} onChange={(e) => setQ(e.target.value)} />
           {q && (
             <button
               type="button"
@@ -310,7 +338,7 @@ function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: 
               onClick={() => setQ("")}
               aria-label="Clear player search"
             >
-              ×
+              Ã—
             </button>
           )}
         </div>
@@ -385,7 +413,7 @@ function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: 
               <div className="ml-auto flex gap-2">
                 {editing ? (
                   <>
-                    <button className="btn-primary !px-3 !py-1.5 text-xs" disabled={saving === m.id} onClick={() => save(m)}>{saving === m.id ? "…" : "Save"}</button>
+                    <button className="btn-primary !px-3 !py-1.5 text-xs" disabled={saving === m.id} onClick={() => save(m)}>{saving === m.id ? "â€¦" : "Save"}</button>
                     <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => setEditId(null)}>Cancel</button>
                   </>
                 ) : (
@@ -418,7 +446,7 @@ function ScoresTab({ data, apiOk, patchMatch }: { data: DataShape; apiOk: (res: 
   );
 }
 
-function PlayersTab({ data, apiOk }: { data: DataShape; apiOk: (res: Response, ok: string) => Promise<void> }) {
+function PlayersTab({ data, apiOk, setDialog, pendingRef }: { data: DataShape; apiOk: (res: Response, ok: string) => Promise<void>; setDialog: (d: any) => void; pendingRef: { current: (() => void) | null } }) {
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState("");
   const [adding, setAdding] = useState(false);
@@ -464,14 +492,17 @@ function PlayersTab({ data, apiOk }: { data: DataShape; apiOk: (res: Response, o
   }
 
   async function remove(p: Player) {
-    if (!confirm(`Delete ${p.name}? This also deletes all their fixtures and removes them from standings. This cannot be undone.`)) return;
-    setSaving(p.id);
-    try {
-      const res = await fetch(`/api/players/${p.id}`, { method: "DELETE" });
-      await apiOk(res, `Deleted ${p.name}`);
-    } catch (error: unknown) {
-      alert(error instanceof Error ? error.message : "Could not delete player");
-    } finally { setSaving(null); }
+    setDialog({title:'Delete player?',message:'Delete '+p.name+'? Removes all fixtures and standings data.',destructive:true});
+    pendingRef.current = async () => {
+      setDialog(null);
+      setSaving(p.id);
+      try {
+        const res = await fetch(`/api/players/${p.id}`, { method: "DELETE" });
+        await apiOk(res, `Deleted ${p.name}`);
+      } catch (error: unknown) {
+        alert(error instanceof Error ? error.message : "Could not delete player");
+      } finally { setSaving(null); }
+    };
   }
 
   return (
@@ -515,9 +546,9 @@ function PlayersTab({ data, apiOk }: { data: DataShape; apiOk: (res: Response, o
         </label>
         <label className="block text-sm">
           <span className="text-slate-300">Avatar URL (optional)</span>
-          <input className="input mt-1" value={avatar} onChange={(e) => setAvatar(e.target.value)} placeholder="https://…" />
+          <input className="input mt-1" value={avatar} onChange={(e) => setAvatar(e.target.value)} placeholder="https://â€¦" />
         </label>
-        <button className="btn-primary w-full" disabled={adding}>{adding ? "Adding…" : "Add player"}</button>
+        <button className="btn-primary w-full" disabled={adding}>{adding ? "Addingâ€¦" : "Add player"}</button>
       </form>
     </div>
   );
@@ -538,14 +569,14 @@ function AuditTab() {
       }
     })();
   }, []);
-  if (err) return <div className="card p-4 text-sm text-red-300">⚠️ {err}</div>;
-  if (!logs) return <div className="card p-4 text-sm text-slate-400">Loading audit log…</div>;
+  if (err) return <div className="card p-4 text-sm text-red-300">âš ï¸ {err}</div>;
+  if (!logs) return <div className="card p-4 text-sm text-slate-400">Loading audit logâ€¦</div>;
   if (logs.length === 0) return <div className="card p-6 text-center text-sm text-slate-500">No actions logged yet.</div>;
   return (
     <div className="card divide-y divide-slate-800/70">
       {logs.map((l) => (
         <div key={l.id} className="flex items-start gap-3 p-3">
-          <span className="mt-0.5 grid h-7 w-7 place-items-center rounded-md bg-slate-800 text-xs">📝</span>
+          <span className="mt-0.5 grid h-7 w-7 place-items-center rounded-md bg-slate-800 text-xs">ðŸ“</span>
           <div className="flex-1">
             <p className="text-sm"><span className="font-semibold text-pitch-400">{l.action}</span> <span className="text-slate-400">by {l.actor}</span></p>
             {l.detail && <p className="text-sm text-slate-300">{l.detail}</p>}
@@ -556,3 +587,16 @@ function AuditTab() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
