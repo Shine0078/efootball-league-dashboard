@@ -49,6 +49,7 @@ model Match {
   round        Int? // null for normal, 0-indexed round number for knockout
   nextMatchId  String? // for knockout: the match the winner advances to
   bracketPosition Int? // position within the round
+  winnerOverride String? // overrides winner for draws (penalties/extra time)
   createdAt    DateTime  @default(now())
 
   homePlayer Player?  @relation("HomePlayer", fields: [homePlayerId], references: [id], onDelete: Cascade)
