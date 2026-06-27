@@ -22,6 +22,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     awayGoals?: number;
     status?: string;
     delete?: boolean;
+    winnerOverride?: string | null;
   };
 
   const existing = await prisma.match.findUnique({
@@ -40,7 +41,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const m = await prisma.$transaction(async (tx) => {
       const match = await tx.match.update({
         where: { id },
-        data: { homeGoals: null, awayGoals: null, status: "scheduled", playedAt: null },
+        data: { homeGoals: null, awayGoals: null, winnerOverride: null, status: "scheduled", playedAt: null },
       });
 
       if (match.nextMatchId) {
@@ -73,8 +74,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "Both scores must be non-negative integers" }, { status: 400 });
   }
 
-  if (isKnockout && homeGoals === awayGoals) {
-    return NextResponse.json({ error: "Knockout matches cannot end in a draw" }, { status: 400 });
+  if (isKnockout && homeGoals === awayGoals && !body.winnerOverride) {
+    return NextResponse.json({ error: "Draw requires winnerOverride" }, { status: 400 });
   }
 
   const m = await prisma.$transaction(async (tx) => {
@@ -83,6 +84,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       data: {
         homeGoals,
         awayGoals,
+        winnerOverride: body.winnerOverride ?? null,
         status: "completed",
         playedAt: existing.playedAt ?? new Date(),
       },
