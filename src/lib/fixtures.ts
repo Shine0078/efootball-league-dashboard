@@ -54,7 +54,7 @@ function standardSeedOrder(bracketSize: number): number[] {
     const next: number[] = [];
     for (const s of seeds) {
       next.push(s);
-      next.push(2 * seeds.length + 1 - s + seeds.length);
+      next.push(2 * seeds.length + 1 - s );
     }
     seeds = next;
   }
