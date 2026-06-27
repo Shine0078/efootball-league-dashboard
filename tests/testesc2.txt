@@ -1,1 +1,0 @@
-﻿  await it("returns 0 for <2 players, () => {

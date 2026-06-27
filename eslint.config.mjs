@@ -1,13 +1,17 @@
-import nextPlugin from "@eslint/js";
+﻿import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { FlatCompat } from '@eslint/eslintrc';
 
-export default [
-  nextPlugin.configs.recommended,
-  {
-    rules: {
-      "no-unused-vars": "off",
-    },
-  },
-  {
-    ignores: [".next/**", "node_modules/**", "postcss.config.js"],
-  },
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const compat = new FlatCompat({ baseDirectory: __dirname });
+
+const eslintConfig = [
+  ...compat.extends('next/core-web-vitals'),
+  { rules: { 'no-unused-vars': 'off' } },
+  { ignores: ['.next/**', 'node_modules/**', 'postcss.config.js', 'scripts/**'] },
 ];
+
+export default eslintConfig;
+
