@@ -10,7 +10,7 @@ datasource db {
 model League {
   id        String   @id @default(cuid())
   name      String
-  type      String   @default("normal") // "normal" | "knockout"
+  type      String   @default("normal") // "normal" | "tournament"
   status    String   @default("active") // "active" | "completed" | "archived"
   createdAt DateTime @default(now())
 
@@ -43,11 +43,11 @@ model Match {
   homeGoals    Int?
   awayGoals    Int?
   playedAt     DateTime?
-  leg          String    @default("") // "home" | "away" for normal leagues, "" for knockout
+  leg          String    @default("") // "home" | "away" for normal leagues, "" for tournament
   status       String    @default("scheduled") // "scheduled" | "completed" | "bye"
   leagueId     String?
-  round        Int? // null for normal, 0-indexed round number for knockout
-  nextMatchId  String? // for knockout: the match the winner advances to
+  round        Int? // null for normal, 0-indexed round number for tournament
+  nextMatchId  String? // for tournament: the match the winner advances to
   bracketPosition Int? // position within the round
   winnerOverride String? // overrides winner for draws (penalties/extra time)
   createdAt    DateTime  @default(now())
