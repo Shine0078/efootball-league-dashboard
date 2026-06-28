@@ -37,8 +37,8 @@ describe('Knockout E2E', async () => {
     try { require('fs').unlinkSync('prisma/test-e2e.db-journal'); } catch {}
   });
 
-  it('creates KO league with 4 players and correct bracket structure', async () => {
-    const league = await prisma.league.create({ data: { name: 'E2E KO', type: 'knockout' } });
+  it('creates Tournament league with 4 players and correct bracket structure', async () => {
+    const league = await prisma.league.create({ data: { name: 'E2E Tournament', type: 'tournament' } });
     const names = ['Alice','Bob','Charlie','Diana'];
     const players = [];
     for (let i = 0; i < names.length; i++) {
@@ -59,7 +59,7 @@ describe('Knockout E2E', async () => {
   });
 
   it('submits scores and advances winner to next round', async () => {
-    const league = await prisma.league.create({ data: { name: 'E2E Adv', type: 'knockout' } });
+    const league = await prisma.league.create({ data: { name: 'E2E Adv', type: 'tournament' } });
     const players = await Promise.all(['Alice','Bob','Charlie','Diana'].map((n,i)=>prisma.player.create({data:{name:n,order:i,leagueId:league.id}})));
     const bracket = generateKnockoutBracket(players.map(p=>p.id));
     const created = [];
@@ -82,7 +82,7 @@ describe('Knockout E2E', async () => {
     await prisma.league.delete({ where: { id: league.id } });
   });
   it('handles draw with winnerOverride and advances correctly', async () => {
-    const league = await prisma.league.create({ data: { name: 'E2E Pens', type: 'knockout' } });
+    const league = await prisma.league.create({ data: { name: 'E2E Pens', type: 'tournament' } });
     const players = await Promise.all(['Alice','Bob'].map((n,i)=>prisma.player.create({data:{name:n,order:i,leagueId:league.id}})));
     const bracket = generateKnockoutBracket(players.map(p=>p.id));
     const match = await prisma.match.create({ data: { ...bracket[0], leagueId: league.id } });
@@ -96,7 +96,7 @@ describe('Knockout E2E', async () => {
     await prisma.league.delete({ where: { id: league.id } });
   });
   it('handles byes for odd number of players (3 players)', async () => {
-    const league = await prisma.league.create({ data: { name: 'E2E Byes', type: 'knockout' } });
+    const league = await prisma.league.create({ data: { name: 'E2E Byes', type: 'tournament' } });
     const players = await Promise.all(['Alice','Bob','Charlie'].map((n,i)=>prisma.player.create({data:{name:n,order:i,leagueId:league.id}})));
     const bracket = generateKnockoutBracket(players.map(p=>p.id));
     assert.equal(bracket.filter(m=>m.status==='bye').length, 1);
@@ -111,7 +111,7 @@ describe('Knockout E2E', async () => {
     await prisma.league.delete({ where: { id: league.id } });
   });
   it('completes all rounds and crowns a champion', async () => {
-    const league = await prisma.league.create({ data: { name: 'E2E Champ', type: 'knockout' } });
+    const league = await prisma.league.create({ data: { name: 'E2E Champ', type: 'tournament' } });
     const names = ['Alice','Bob','Charlie','Diana'];
     const players = await Promise.all(names.map((n,i)=>prisma.player.create({data:{name:n,order:i,leagueId:league.id}})));
     const bracket = generateKnockoutBracket(players.map(p=>p.id));
@@ -149,7 +149,31 @@ describe('Knockout E2E', async () => {
     assert.notEqual(champion, undefined);
     await prisma.league.delete({ where: { id: league.id } });
   });
+
+  it('handles 25-player tournament bracket correctly', async () => {
+    const league = await prisma.league.create({ data: { name: 'E2E 25 Players', type: 'tournament' } });
+    const names = Array.from({ length: 25 }, (_, i) => `Player${i + 1}`);
+    const players = [];
+    for (let i = 0; i < names.length; i++) {
+      const p = await prisma.player.create({ data: { name: names[i], order: i, leagueId: league.id } });
+      players.push(p);
+    }
+    assert.equal(players.length, 25);
+
+    const rounds = knockoutRounds(25);
+    assert.equal(rounds, 5);
+
+    const bracket = generateKnockoutBracket(players.map(p => p.id));
+    const expectedMatches = Math.pow(2, rounds) - 1;
+    assert.equal(bracket.length, expectedMatches);
+    assert.equal(expectedMatches, 31);
+
+    for (const m of bracket) {
+      await prisma.match.create({ data: { ...m, leagueId: league.id } });
+    }
+    const dbMatches = await prisma.match.findMany({ where: { leagueId: league.id } });
+    assert.equal(dbMatches.length, expectedMatches);
+
+    await prisma.league.delete({ where: { id: league.id } });
+  });
 });
-
-
-
