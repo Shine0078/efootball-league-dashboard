@@ -226,7 +226,7 @@ export default function Dashboard() {
         />
       )}
 
-      {data.leagueType === "knockout" ? (
+      {data.leagueType === "tournament" ? (
         <KnockoutSection
           bracket={data.bracket ?? []}
           league={data.league}
@@ -553,7 +553,7 @@ function LeagueSelector({
           }`}
         >
           {l.name}
-          {l.type === "knockout" && <span className="ml-1.5 text-[9px] text-amber-400">KO</span>}
+          {l.type === "tournament" && <span className="ml-1.5 text-[9px] text-amber-400">T</span>}
         </button>
       ))}
     </div>
@@ -575,8 +575,8 @@ function KnockoutSection({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-pitch-400">Knockout Stage</p>
-          <h2 className="mt-1 text-2xl font-black tracking-tight">{league?.name ?? "Knockout Bracket"}</h2>
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-pitch-400">Tournament Stage</p>
+          <h2 className="mt-1 text-2xl font-black tracking-tight">{league?.name ?? "Tournament Bracket"}</h2>
           <p className="mt-1 text-xs text-slate-400">{players} players · {matches} matches</p>
         </div>
       </div>
