@@ -35,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   });
   if (!existing) return NextResponse.json({ error: "Match not found" }, { status: 404 });
 
-  const isKnockout = existing.league?.type === "knockout";
+  const isKnockout = existing.league?.type === "tournament";
 
   if (body.delete === true) {
     const m = await prisma.$transaction(async (tx) => {
