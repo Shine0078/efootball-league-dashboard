@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     orderBy: { playedAt: "asc" },
   });
 
-  if (leagueType === "knockout") {
+  if (leagueType === "tournament") {
     const playerMap = new Map(
       players.map((p) => [p.id, { name: p.name, avatar: p.avatar }])
     );
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       league: league ? { id: league.id, name: league.name, type: league.type, status: league.status } : null,
       leagues: allLeagues,
-      leagueType: "knockout",
+      leagueType: "tournament",
       players,
       matches,
       bracket,
