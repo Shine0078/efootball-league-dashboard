@@ -100,7 +100,7 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
   const [leagues, setLeagues] = useState<LeagueData[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [type, setType] = useState<"normal" | "knockout">("normal");
+  const [type, setType] = useState<"normal" | "tournament">("normal");
   const [playerInput, setPlayerInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -156,20 +156,20 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
   if (err) return <div className="card p-4 text-sm text-red-300">âš ï¸ {err}</div>;
   if (!leagues) return <div className="card p-4 text-sm text-slate-400">Loading leaguesâ€¦</div>;
 
-  const knockoutLeagues = leagues.filter(l => l.type === 'knockout');
+  const knockoutLeagues = leagues.filter(l => l.type === 'tournament');
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
       <div className="card divide-y divide-slate-800/70">
         {leagues.map((l) => (
           <div key={l.id} className="flex items-center gap-3 p-3">
-            <span className={`grid h-7 w-7 place-items-center rounded-md text-xs font-bold ${l.type === "knockout" ? "bg-amber-500/20 text-amber-300" : "bg-pitch-600/20 text-pitch-300"}`}>
-              {l.type === "knockout" ? "KO" : "L"}
+            <span className={`grid h-7 w-7 place-items-center rounded-md text-xs font-bold ${l.type === "tournament" ? "bg-amber-500/20 text-amber-300" : "bg-pitch-600/20 text-pitch-300"}`}>
+              {l.type === "tournament" ? "T" : "L"}
             </span>
             <div className="flex-1">
               <p className="font-semibold">{l.name}</p>
               <p className="text-xs text-slate-500">
-                {l.type === "knockout" ? "Knockout" : "Round-robin"} Â· {l._count.players} players Â· {l._count.matches} matches Â· {new Date(l.createdAt).toLocaleDateString()}
+                {l.type === "tournament" ? "Tournament" : "Round-robin"} Â· {l._count.players} players Â· {l._count.matches} matches Â· {new Date(l.createdAt).toLocaleDateString()}
               </p>
             </div>
             <a href={`/?league=${l.id}`} className="btn-ghost !px-3 !py-1.5 text-xs" target="_blank" rel="noopener">View</a>
@@ -191,8 +191,8 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
             <button type="button" onClick={() => setType("normal")} className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${type === "normal" ? "border-pitch-500 bg-pitch-600/20 text-pitch-300" : "border-white/10 text-slate-300 hover:bg-slate-800"}`}>
               Round-Robin
             </button>
-            <button type="button" onClick={() => setType("knockout")} className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${type === "knockout" ? "border-amber-500 bg-amber-600/20 text-amber-300" : "border-white/10 text-slate-300 hover:bg-slate-800"}`}>
-              Knockout
+            <button type="button" onClick={() => setType("tournament")} className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${type === "tournament" ? "border-amber-500 bg-amber-600/20 text-amber-300" : "border-white/10 text-slate-300 hover:bg-slate-800"}`}>
+              Tournament
             </button>
           </div>
         </div>
