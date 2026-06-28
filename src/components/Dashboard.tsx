@@ -138,6 +138,8 @@ export default function Dashboard() {
     return <DashboardSkeleton />;
   }
 
+  const isTournament = data.leagueType === "tournament";
+
   const completed = data.matches.filter((m) => m.status === "completed")
     .sort((a, b) => new Date(b.playedAt ?? 0).getTime() - new Date(a.playedAt ?? 0).getTime());
   const upcoming = data.matches.filter((m) => m.status === "scheduled")
@@ -147,11 +149,12 @@ export default function Dashboard() {
   const total = data.matches.length;
   const remaining = total - played;
   const completion = total ? Math.round((played / total) * 100) : 0;
-  const leader = data.standings[0];
-  const bestAttack = played ? [...data.standings].sort((a, b) => b.gf - a.gf || b.pts - a.pts)[0] : undefined;
-  const bestGd = played ? [...data.standings].sort((a, b) => b.gd - a.gd || b.pts - a.pts)[0] : undefined;
+  const standings = data.standings ?? [];
+  const leader = standings[0];
+  const bestAttack = played ? [...standings].sort((a, b) => b.gf - a.gf || b.pts - a.pts)[0] : undefined;
+  const bestGd = played ? [...standings].sort((a, b) => b.gd - a.gd || b.pts - a.pts)[0] : undefined;
   const bestDefense = played
-    ? [...data.standings]
+    ? [...standings]
         .filter((row) => row.mp > 0)
         .sort((a, b) => a.ga - b.ga || b.mp - a.mp || b.pts - a.pts)[0]
     : undefined;
