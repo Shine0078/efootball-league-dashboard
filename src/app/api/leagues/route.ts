@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "League name is required (1-100 chars)" }, { status: 400 });
   }
 
-  const type = body.type === "knockout" ? "knockout" : "normal";
+  const type = body.type === "tournament" ? "tournament" : "normal";
 
   const playerNames = Array.isArray(body.players)
     ? body.players.filter((p): p is string => typeof p === "string" && p.trim().length > 0).map((p) => p.trim())
@@ -50,8 +50,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Maximum 64 players per league" }, { status: 400 });
   }
 
-  if (type === "knockout" && playerNames.length < 2) {
-    return NextResponse.json({ error: "Knockout requires at least 2 players" }, { status: 400 });
+  if (type === "tournament" && playerNames.length < 2) {
+    return NextResponse.json({ error: "Tournament requires at least 2 players" }, { status: 400 });
   }
 
   const uniqueNames = Array.from(new Set(playerNames.map((n) => n.toLowerCase())));
