@@ -34,6 +34,12 @@ async function main() {
   });
   console.log(`✓ Admin ready: ${adminEmail} (password from ADMIN_PASSWORD env)`);
 
+  // Remove the "eFootball League" and all its players/matches (cascade) if it exists.
+  const deletedLeague = await prisma.league.deleteMany({ where: { id: "league-efootball" } }).catch(() => null);
+  if (deletedLeague && deletedLeague.count > 0) {
+    console.log(`✓ Removed stale "eFootball League" (${deletedLeague.count} row)`);
+  }
+
   // Add sample players only to an empty league. Existing leagues are never overwritten.
   let existing = await prisma.player.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }] });
   if (existing.length === 0) {
