@@ -1,9 +1,41 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
-import { copyFileSync, existsSync } from "fs";
-import { isAbsolute, join } from "path";
+import { copyFileSync, existsSync, readdirSync, statSync } from "fs";
+import { basename, isAbsolute, join } from "path";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+function findBundledDatabase(root: string, maxDepth = 5): string | null {
+  if (!root || !existsSync(root)) return null;
+
+  const stack: { path: string; depth: number }[] = [{ path: root, depth: 0 }];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || current.depth > maxDepth) continue;
+
+    let entries: string[];
+    try {
+      entries = readdirSync(current.path);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = join(current.path, entry);
+      if (entry === "league.sqlite") return fullPath;
+
+      try {
+        if (statSync(fullPath).isDirectory() && !["node_modules", ".git"].includes(basename(fullPath))) {
+          stack.push({ path: fullPath, depth: current.depth + 1 });
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return null;
+}
 
 function resolveDatabaseUrl(): string {
   const configured = process.env.DATABASE_URL?.trim();
@@ -21,12 +53,20 @@ function resolveDatabaseUrl(): string {
     sourcePath,
     join(process.cwd(), "data", "league.sqlite"),
     join(process.cwd(), "prisma", "data", "league.sqlite"),
+    process.env.LAMBDA_TASK_ROOT ? join(process.env.LAMBDA_TASK_ROOT, "data", "league.sqlite") : "",
+    process.env.LAMBDA_TASK_ROOT ? join(process.env.LAMBDA_TASK_ROOT, "prisma", "data", "league.sqlite") : "",
   ];
-  const existingSource = candidates.find((candidate) => existsSync(candidate));
-  if (!existingSource) return databaseUrl;
+  const existingSource = candidates.find((candidate) => candidate && existsSync(candidate))
+    ?? findBundledDatabase(process.env.LAMBDA_TASK_ROOT ?? process.cwd());
 
   const tmpPath = join("/tmp", "league.sqlite");
-  try { copyFileSync(existingSource, tmpPath); } catch { return databaseUrl; }
+  if (!existsSync(tmpPath) && existingSource) {
+    try {
+      copyFileSync(existingSource, tmpPath);
+    } catch {
+      return databaseUrl;
+    }
+  }
   return `file:${tmpPath}`;
 }
 

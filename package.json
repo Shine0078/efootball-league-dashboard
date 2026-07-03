@@ -15,7 +15,7 @@
     "db:push": "prisma db push",
     "db:seed": "tsx scripts/seed.ts",
     "db:avatars": "tsx scripts/assign-avatars.ts",
-    "vercel-build": "prisma db push && npm run db:seed && next build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {

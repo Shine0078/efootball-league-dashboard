@@ -5,6 +5,8 @@ const nextConfig = {
   serverExternalPackages: ["@prisma/adapter-libsql", "@libsql/client"],
   outputFileTracingIncludes: {
     "/*": ["./data/**/*", "./prisma/data/**/*"],
+    "/api/*": ["./data/**/*", "./prisma/data/**/*"],
+    "/api/data": ["./data/**/*", "./prisma/data/**/*"],
   },
   experimental: {
     serverActions: { bodySizeLimit: "2mb" }
