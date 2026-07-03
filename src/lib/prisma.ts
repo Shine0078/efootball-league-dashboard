@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
 import { copyFileSync, existsSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join } from "path";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -13,19 +13,20 @@ function resolveDatabaseUrl(): string {
     return configured;
   }
 
-  const sourcePath = configured.replace(/^file:/, "");
-  if (!existsSync(sourcePath)) {
-    const altSource = join(process.cwd(), "prisma", "data", "league.sqlite");
-    if (existsSync(altSource)) {
-      const tmpPath = join("/tmp", "league.sqlite");
-      try { copyFileSync(altSource, tmpPath); } catch { return configured; }
-      return `file:${tmpPath}`;
-    }
-    return configured;
-  }
+  const configuredPath = configured.replace(/^file:/, "");
+  const sourcePath = isAbsolute(configuredPath)
+    ? configuredPath
+    : join(process.cwd(), configuredPath);
+  const candidates = [
+    sourcePath,
+    join(process.cwd(), "data", "league.sqlite"),
+    join(process.cwd(), "prisma", "data", "league.sqlite"),
+  ];
+  const existingSource = candidates.find((candidate) => existsSync(candidate));
+  if (!existingSource) return configured;
 
   const tmpPath = join("/tmp", "league.sqlite");
-  try { copyFileSync(sourcePath, tmpPath); } catch { return configured; }
+  try { copyFileSync(existingSource, tmpPath); } catch { return configured; }
   return `file:${tmpPath}`;
 }
 
