@@ -60,7 +60,7 @@ function resolveDatabaseUrl(): string {
     ?? findBundledDatabase(process.env.LAMBDA_TASK_ROOT ?? process.cwd());
 
   const tmpPath = join("/tmp", "league.sqlite");
-  if (!existsSync(tmpPath) && existingSource) {
+  if (existingSource) {
     try {
       copyFileSync(existingSource, tmpPath);
     } catch {

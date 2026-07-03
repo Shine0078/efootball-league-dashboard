@@ -1,7 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-process.env.DATABASE_URL = process.env.DATABASE_URL?.trim() || "file:./data/league.sqlite";
+const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
+if (!configuredDatabaseUrl || configuredDatabaseUrl.startsWith("file:")) {
+  process.env.DATABASE_URL = "file:./data/league.sqlite";
+}
 mkdirSync("prisma/data", { recursive: true });
 
 const commands = [
