@@ -59,6 +59,7 @@ model Match {
   @@index([status])
   @@index([leagueId])
   @@index([round])
+  @@unique([homePlayerId, awayPlayerId])
 }
 
 model Admin {

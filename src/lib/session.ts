@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { getIronSession, type SessionOptions } from "iron-session";
+import { prisma } from "@/lib/prisma";
 
 export interface SessionData {
   adminId?: string;
@@ -38,11 +39,24 @@ export async function getSession() {
 
 export async function requireAdmin(): Promise<SessionData> {
   const session = await getSession();
-  if (!session.isLoggedIn || !session.email) {
+  if (!session.isLoggedIn || !session.email || !session.adminId) {
     throw new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
-  return session;
+
+  const admin = await prisma.admin.findUnique({
+    where: { id: session.adminId },
+    select: { id: true, email: true, role: true },
+  });
+
+  if (!admin || admin.email !== session.email) {
+    throw new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return { ...session, adminId: admin.id, email: admin.email, role: admin.role, isLoggedIn: true };
 }

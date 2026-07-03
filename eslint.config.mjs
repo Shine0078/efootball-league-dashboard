@@ -9,7 +9,12 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 
 const eslintConfig = [
   ...compat.extends('next/core-web-vitals'),
-  { rules: { 'no-unused-vars': 'off' } },
+  {
+    rules: {
+      'no-unused-vars': 'off',
+      '@next/next/no-img-element': 'off',
+    },
+  },
   { ignores: ['.next/**', 'node_modules/**', 'postcss.config.js', 'scripts/**'] },
 ];
 

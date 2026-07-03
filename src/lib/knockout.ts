@@ -15,7 +15,9 @@ export function determineWinner(match: {
   if (match.homeGoals == null || match.awayGoals == null) return null;
   if (match.homeGoals > match.awayGoals) return match.homePlayerId;
   if (match.awayGoals > match.homeGoals) return match.awayPlayerId;
-  if (match.winnerOverride) return match.winnerOverride;
+  if (match.winnerOverride === match.homePlayerId || match.winnerOverride === match.awayPlayerId) {
+    return match.winnerOverride;
+  }
   return null;
 }
 
@@ -44,6 +46,29 @@ export async function advanceWinnerToNextMatch(
   }
 
   await tx.match.update({ where: { id: nextMatch.id }, data: updateData });
+}
+
+export async function clearAdvancementFromMatch(tx: TxClient, sourceMatchId: string): Promise<void> {
+  const sourceMatch = await tx.match.findUnique({ where: { id: sourceMatchId } });
+  if (!sourceMatch?.nextMatchId) return;
+
+  const nextMatch = await tx.match.findUnique({ where: { id: sourceMatch.nextMatchId } });
+  if (!nextMatch) return;
+
+  const isHomeSlot = sourceMatch.bracketPosition != null && sourceMatch.bracketPosition % 2 === 0;
+  await tx.match.update({
+    where: { id: nextMatch.id },
+    data: {
+      ...(isHomeSlot ? { homePlayerId: null } : { awayPlayerId: null }),
+      homeGoals: null,
+      awayGoals: null,
+      winnerOverride: null,
+      status: "scheduled",
+      playedAt: null,
+    },
+  });
+
+  await clearAdvancementFromMatch(tx, nextMatch.id);
 }
 
 export async function autoAdvanceByes(tx: TxClient, leagueId: string): Promise<void> {

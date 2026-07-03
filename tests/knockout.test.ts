@@ -38,6 +38,8 @@ describe("determineWinner", () => {
   assert.equal(determineWinner({homeGoals:2,awayGoals:2,homePlayerId:"h",awayPlayerId:"a",status:"completed"}), null);
   assert.equal(determineWinner({homeGoals:null,awayGoals:null,homePlayerId:"h",awayPlayerId:null,status:"bye"}), "h");
   assert.equal(determineWinner({homeGoals:null,awayGoals:null,homePlayerId:null,awayPlayerId:"a",status:"bye"}), "a");
+  assert.equal(determineWinner({homeGoals:2,awayGoals:2,homePlayerId:"h",awayPlayerId:"a",status:"completed",winnerOverride:"other"}), null);
+  assert.equal(determineWinner({homeGoals:2,awayGoals:2,homePlayerId:"h",awayPlayerId:"a",status:"completed",winnerOverride:"a"}), "a");
 });
 
 describe("generateKnockoutBracket", () => {

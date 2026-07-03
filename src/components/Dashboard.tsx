@@ -91,7 +91,7 @@ export default function Dashboard() {
       setRefreshing(false);
       fetchingRef.current = false;
     }
-  }, []);
+  }, [activeLeagueId]);
 
   useEffect(() => {
     const savedPlayerId = window.localStorage.getItem(PLAYER_FILTER_KEY);

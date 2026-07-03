@@ -1,70 +1,80 @@
 import { NextResponse } from "next/server";
+import { handleRouteError, jsonError, readJsonObject, requireSameOrigin, validateId } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
-
-async function require() {
-  const s = await getSession();
-  if (!s.isLoggedIn || !s.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  return s;
-}
+import { requireAdmin } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const league = await prisma.league.findUnique({
-    where: { id },
-    include: {
-      players: { orderBy: [{ order: "asc" }, { name: "asc" }] },
-      _count: { select: { matches: true } },
-    },
-  });
-  if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
-  return NextResponse.json({ league });
+  try {
+    const { id: rawId } = await params;
+    const id = validateId(rawId);
+    const league = await prisma.league.findUnique({
+      where: { id },
+      include: {
+        players: { orderBy: [{ order: "asc" }, { name: "asc" }] },
+        _count: { select: { matches: true } },
+      },
+    });
+    if (!league) return jsonError("League not found", 404);
+    return NextResponse.json({ league });
+  } catch (error) {
+    return handleRouteError(error, "Failed to load league");
+  }
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await require();
-  if (guard instanceof NextResponse) return guard;
-  const { id } = await params;
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    requireSameOrigin(req);
+    const guard = await requireAdmin();
+    const { id: rawId } = await params;
+    const id = validateId(rawId);
 
-  const league = await prisma.league.findUnique({ where: { id }, select: { name: true, type: true } });
-  if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
+    const league = await prisma.league.findUnique({ where: { id }, select: { name: true, type: true } });
+    if (!league) return jsonError("League not found", 404);
 
-  await prisma.$transaction(async (tx) => {
-    await tx.league.delete({ where: { id } });
-    await tx.auditLog.create({
-      data: { actor: guard.email!, action: "league.delete", detail: `Deleted ${league.type} league "${league.name}"` },
+    await prisma.$transaction(async (tx) => {
+      await tx.league.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: { actor: guard.email ?? "admin", action: "league.delete", detail: `Deleted ${league.type} league "${league.name}"` },
+      });
     });
-  });
 
-  return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return handleRouteError(error, "Failed to delete league");
+  }
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await require();
-  if (guard instanceof NextResponse) return guard;
-  const { id } = await params;
-  const body = await req.json().catch(() => ({})) as { status?: unknown };
+  try {
+    requireSameOrigin(req);
+    const guard = await requireAdmin();
+    const { id: rawId } = await params;
+    const id = validateId(rawId);
+    const body = await readJsonObject(req);
 
-  const league = await prisma.league.findUnique({ where: { id } });
-  if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
+    const league = await prisma.league.findUnique({ where: { id } });
+    if (!league) return jsonError("League not found", 404);
 
-  const data: { status?: string } = {};
-  if (body.status === "active" || body.status === "completed" || body.status === "archived") {
-    data.status = body.status;
-  }
-  if (!Object.keys(data).length) {
-    return NextResponse.json({ error: "No valid changes" }, { status: 400 });
-  }
+    const data: { status?: string } = {};
+    if (body.status === "active" || body.status === "completed" || body.status === "archived") {
+      data.status = body.status;
+    }
+    if (!Object.keys(data).length) {
+      return jsonError("No valid changes", 400);
+    }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const league = await tx.league.update({ where: { id }, data });
-    await tx.auditLog.create({
-      data: { actor: guard.email!, action: "league.update", detail: `Updated league "${league.name}" status to ${data.status}` },
+    const updated = await prisma.$transaction(async (tx) => {
+      const league = await tx.league.update({ where: { id }, data });
+      await tx.auditLog.create({
+        data: { actor: guard.email ?? "admin", action: "league.update", detail: `Updated league "${league.name}" status to ${data.status}` },
+      });
+      return league;
     });
-    return league;
-  });
 
-  return NextResponse.json({ ok: true, league: updated });
+    return NextResponse.json({ ok: true, league: updated });
+  } catch (error) {
+    return handleRouteError(error, "Failed to update league");
+  }
 }

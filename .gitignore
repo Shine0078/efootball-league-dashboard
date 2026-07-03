@@ -6,6 +6,8 @@
 # prisma local db
 *.db
 *.db-journal
+*.sqlite
+*.sqlite-journal
 /prisma/migrations/dev.db*
 
 # dependencies

@@ -1,48 +1,67 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { handleRouteError, jsonError, readJsonObject, requireSameOrigin } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
-  const { email, password } = await req.json().catch(() => ({}) as { email?: string; password?: string });
-  if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
-    return NextResponse.json({ error: "Email and password required" }, { status: 400 });
-  }
-  if (email.length > 254 || password.length > 200) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-  }
-
-  const admin = await prisma.admin.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!admin || !(await bcrypt.compare(password, admin.passwordHash))) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
-  }
-
-  const session = await getSession();
-  session.adminId = admin.id;
-  session.email = admin.email;
-  session.role = admin.role;
-  session.isLoggedIn = true;
-  await session.save();
-
-  // Authentication must not fail if optional audit storage is temporarily
-  // unavailable (for example, a read-only bundled SQLite database).
   try {
-    await prisma.auditLog.create({ data: { actor: admin.email, action: "login", detail: "Admin logged in" } });
+    requireSameOrigin(req);
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+    if (!checkRateLimit(`login:${ip}`, 20, 15 * 60 * 1000)) {
+      return jsonError("Too many login attempts. Try again later.", 429);
+    }
+
+    const body = await readJsonObject(req);
+    const email = typeof body.email === "string" ? body.email.toLowerCase().trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!email || !password) {
+      return jsonError("Email and password required", 400);
+    }
+    if (email.length > 254 || password.length > 200) {
+      return jsonError("Invalid credentials", 401);
+    }
+
+    const admin = await prisma.admin.findUnique({ where: { email } });
+    if (!admin || !(await bcrypt.compare(password, admin.passwordHash))) {
+      return jsonError("Invalid credentials", 401);
+    }
+
+    const session = await getSession();
+    session.adminId = admin.id;
+    session.email = admin.email;
+    session.role = admin.role;
+    session.isLoggedIn = true;
+    await session.save();
+
+    // Authentication must not fail if optional audit storage is temporarily
+    // unavailable (for example, a read-only bundled SQLite database).
+    try {
+      await prisma.auditLog.create({ data: { actor: admin.email, action: "login", detail: "Admin logged in" } });
+    } catch (error) {
+      console.error("Failed to write login audit log", error);
+    }
+    return NextResponse.json(
+      { ok: true, email: admin.email, role: admin.role },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
-    console.error("Failed to write login audit log", error);
+    return handleRouteError(error, "Failed to sign in");
   }
-  return NextResponse.json(
-    { ok: true, email: admin.email, role: admin.role },
-    { headers: { "Cache-Control": "no-store" } }
-  );
 }
 
-export async function DELETE() {
-  const session = await getSession();
-  const email = session.email;
-  session.destroy();
-  if (email) {
-    try { await prisma.auditLog.create({ data: { actor: email, action: "logout" } }); } catch {}
+export async function DELETE(req: Request) {
+  try {
+    requireSameOrigin(req);
+    const session = await getSession();
+    const email = session.email;
+    session.destroy();
+    if (email) {
+      try { await prisma.auditLog.create({ data: { actor: email, action: "logout" } }); } catch {}
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return handleRouteError(error, "Failed to sign out");
   }
-  return NextResponse.json({ ok: true });
 }
