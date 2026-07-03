@@ -40,6 +40,11 @@ async function main() {
     console.log(`✓ Removed stale "eFootball League" (${deletedLeague.count} row)`);
   }
 
+  if (process.env.SKIP_SAMPLE_DATA === "1") {
+    console.log("✓ Skipped sample players and fixtures");
+    return;
+  }
+
   // Add sample players only to an empty league. Existing leagues are never overwritten.
   let existing = await prisma.player.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }] });
   if (existing.length === 0) {

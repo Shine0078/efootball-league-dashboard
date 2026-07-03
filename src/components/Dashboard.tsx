@@ -108,6 +108,14 @@ export default function Dashboard() {
   }, [data, fixturePlayerId]);
 
   useEffect(() => {
+    if (activeLeagueId || !data?.leagues.length || data.leagues.length !== 1) return;
+
+    const params = new URLSearchParams(searchParams);
+    params.set("league", data.leagues[0].id);
+    router.replace(`${pathname}?${params.toString()}`);
+  }, [activeLeagueId, data?.leagues, pathname, router, searchParams]);
+
+  useEffect(() => {
     if (!filterHydrated) return;
     if (fixturePlayerId) {
       window.localStorage.setItem(PLAYER_FILTER_KEY, fixturePlayerId);

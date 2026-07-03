@@ -5,6 +5,7 @@ const configuredDatabaseUrl = process.env.DATABASE_URL?.trim();
 if (!configuredDatabaseUrl || configuredDatabaseUrl.startsWith("file:")) {
   process.env.DATABASE_URL = "file:./data/league.sqlite";
 }
+process.env.SKIP_SAMPLE_DATA = "1";
 mkdirSync("prisma/data", { recursive: true });
 
 const commands = [
