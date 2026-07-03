@@ -6,14 +6,14 @@ import { isAbsolute, join } from "path";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function resolveDatabaseUrl(): string {
-  const configured = process.env.DATABASE_URL;
-  if (!configured) return "file:./prisma/data/league.sqlite";
+  const configured = process.env.DATABASE_URL?.trim();
+  const databaseUrl = configured || "file:./data/league.sqlite";
 
-  if (!configured.startsWith("file:") || process.env.NODE_ENV !== "production") {
-    return configured;
+  if (!databaseUrl.startsWith("file:") || process.env.NODE_ENV !== "production") {
+    return databaseUrl;
   }
 
-  const configuredPath = configured.replace(/^file:/, "");
+  const configuredPath = databaseUrl.replace(/^file:/, "");
   const sourcePath = isAbsolute(configuredPath)
     ? configuredPath
     : join(process.cwd(), configuredPath);
@@ -23,10 +23,10 @@ function resolveDatabaseUrl(): string {
     join(process.cwd(), "prisma", "data", "league.sqlite"),
   ];
   const existingSource = candidates.find((candidate) => existsSync(candidate));
-  if (!existingSource) return configured;
+  if (!existingSource) return databaseUrl;
 
   const tmpPath = join("/tmp", "league.sqlite");
-  try { copyFileSync(existingSource, tmpPath); } catch { return configured; }
+  try { copyFileSync(existingSource, tmpPath); } catch { return databaseUrl; }
   return `file:${tmpPath}`;
 }
 
