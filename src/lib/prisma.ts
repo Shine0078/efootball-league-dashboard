@@ -41,9 +41,22 @@ function resolveDatabaseUrl(): string {
   const configured = process.env.DATABASE_URL?.trim();
   const databaseUrl = configured || "file:./data/league.sqlite";
 
-  if (!databaseUrl.startsWith("file:") || process.env.NODE_ENV !== "production") {
+  if (!databaseUrl.startsWith("file:")) {
     return databaseUrl;
   }
+
+  // A serverless /tmp filesystem is not persistent. Refuse to boot rather than
+  // appearing to accept writes that disappear on the next cold start/deploy.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Persistent database required in production: configure TURSO_DATABASE_URL " +
+      "(or a remote database with a matching Prisma provider). file: SQLite URLs " +
+      "are only supported for local development and throwaway demos."
+    );
+  }
+
+  // This copy-to-/tmp path is intentionally limited to non-production demo use.
+  if (process.env.DATABASE_DEMO_TMP !== "true") return databaseUrl;
 
   const configuredPath = databaseUrl.replace(/^file:/, "");
   const sourcePath = isAbsolute(configuredPath)
@@ -59,7 +72,7 @@ function resolveDatabaseUrl(): string {
   const existingSource = candidates.find((candidate) => candidate && existsSync(candidate))
     ?? findBundledDatabase(process.env.LAMBDA_TASK_ROOT ?? process.cwd());
 
-  const tmpPath = join("/tmp", "league.sqlite");
+  const tmpPath = join("/tmp", "league-demo.sqlite");
   if (existingSource) {
     try {
       copyFileSync(existingSource, tmpPath);

@@ -71,9 +71,10 @@ Do **not** share `/admin` links with non-admins — that route redirects to the 
 ## Admin workflow
 
 1. Sign in at `/admin/login`.
-2. **Players tab**: add/edit/remove players. Adding a player auto-generates two fixtures (home & away legs) against every existing player.
-3. **Fixtures & Scores tab**: search/filter, click **Edit**, enter non-negative integer scores, **Save**. The match is marked completed and standings recalculate immediately. **Reset** clears a score back to scheduled.
-4. **Audit Log tab**: see who changed what and when (last 100 entries).
+2. Choose the **Manage league** selector. Use **Default league** for the original league, or select any league created in the Leagues tab.
+3. **Players tab**: add/edit/remove players in the selected round-robin league. Adding a player auto-generates two fixtures (home & away legs) against every existing player. Tournament player lists are fixed when their bracket is created.
+4. **Fixtures & Scores tab**: search/filter, click **Edit**, enter non-negative integer scores, **Save**. For a tied tournament match, choose the advancing winner (penalties/extra time). The match is marked completed and standings recalculate immediately. **Reset** clears a score back to scheduled.
+5. **Audit Log tab**: see who changed what and when (last 100 entries).
 
 All writes go through server-side API routes that verify the admin session — the client is never trusted.
 
@@ -87,8 +88,8 @@ All writes go through server-side API routes that verify the admin session — t
    - `SESSION_SECRET` — a long random string (≥ 32 chars). Generate one with `openssl rand -hex 32`.
    - `ADMIN_EMAIL` — default super-admin email (used only by the seed).
    - `ADMIN_PASSWORD` — default super-admin password (used only by the seed).
-   - `DATABASE_URL` — **optional**. By default the app uses a local SQLite file (`file:./data/league.sqlite`), which works for quick demos but is **ephemeral on Vercel** (reset on every deploy). For a persistent league use a real database:
-     - Easiest free option: create a PostgreSQL DB on [Neon](https://neon.tech) or [Supabase](https://supabase.com) and set `DATABASE_URL` to the connection string, then change the provider in `prisma/schema.prisma` from `sqlite` to `postgresql`, run `npm run db:push` once locally (or via `vercel env pull` + a build script), and Vercel will use it.
+   - `TURSO_DATABASE_URL` and `TURSO_DATABASE_TURSO_AUTH_TOKEN` — required for a persistent deployment with the current SQLite/LibSQL Prisma configuration. Create a Turso database and use its `libsql://` URL and auth token.
+   - `DATABASE_URL` — use `file:./data/league.sqlite` only locally. Production deliberately refuses to start with a `file:` URL so score changes can never be silently lost on Vercel. A remote Postgres deployment requires changing the Prisma datasource provider and regenerating/migrating Prisma before deploying.
 4. After the first deploy, run the seed once so the DB has an admin and fixtures:
    ```bash
    vercel env pull .env.local
@@ -97,7 +98,7 @@ All writes go through server-side API routes that verify the admin session — t
    ```
    …or use `npx prisma studio` against your remote DB to add the admin/fixtures manually.
 
-> SQLite note: Vercel's serverless functions have an ephemeral filesystem. The bundled `data/league.sqlite` resets on each cold start, so use Postgres for any league you care about. The app will still *run* on SQLite on Vercel for testing/throwaway demos.
+> SQLite note: Vercel's serverless functions have an ephemeral filesystem. This app fails fast in production when configured with a `file:` SQLite URL. Use Turso/LibSQL (or migrate Prisma to a remote Postgres provider) for every deployed league.
 
 ---
 

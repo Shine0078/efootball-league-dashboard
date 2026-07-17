@@ -14,15 +14,19 @@ type Match = {
   awayGoals: number | null;
   status: string;
   leg: string;
+  winnerOverride?: string | null;
   playedAt: string | null;
   homePlayer: { id: string; name: string; avatar: string | null };
   awayPlayer: { id: string; name: string; avatar: string | null };
 };
 type AuditLog = { id: string; actor: string; action: string; detail: string | null; createdAt: string };
-type DataShape = { players: Player[]; matches: Match[]; count: { players: number; matches: number } };
+type DataShape = { players: Player[]; matches: Match[]; leagueType?: "normal" | "tournament"; count: { players: number; matches: number } };
+type LeagueOption = { id: string; name: string; type: "normal" | "tournament" };
 
 export default function AdminPanel({ email, role }: { email: string; role: string }) {
   const [data, setData] = useState<DataShape | null>(null);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const [leagueOptions, setLeagueOptions] = useState<LeagueOption[]>([]);
   const [tab, setTab] = useState<"scores" | "players" | "leagues" | "audit">("scores");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -36,17 +40,28 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/data?t=${Date.now()}`, { cache: "no-store" });
+      const query = new URLSearchParams({ t: String(Date.now()) });
+      if (selectedLeagueId) query.set("leagueId", selectedLeagueId);
+      const res = await fetch(`/api/data?${query}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Could not load league data (HTTP ${res.status})`);
       const json = await res.json() as DataShape;
-      setData({ players: json.players, matches: json.matches, count: json.count });
+      setData({ players: json.players, matches: json.matches, leagueType: json.leagueType, count: json.count });
       setLoadError(null);
     } catch (error: unknown) {
       setLoadError(error instanceof Error ? error.message : "Could not load league data");
     }
-  }, []);
+  }, [selectedLeagueId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadLeagueOptions = useCallback(async () => {
+    const res = await fetch("/api/leagues", { cache: "no-store" });
+    if (!res.ok) return;
+    const json = await res.json() as { leagues: LeagueOption[] };
+    setLeagueOptions(json.leagues);
+  }, []);
+
+  useEffect(() => { void loadLeagueOptions(); }, [loadLeagueOptions]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -96,7 +111,7 @@ export default function AdminPanel({ email, role }: { email: string; role: strin
 
 type LeagueData = { id: string; name: string; type: string; status: string; createdAt: string; _count: { players: number; matches: number } };
 
-function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<void> }) {
+function LeaguesTab({ apiOk, onLeaguesChanged }: { apiOk: (res: Response, ok: string) => Promise<void>; onLeaguesChanged: () => Promise<void> }) {
   const [leagues, setLeagues] = useState<LeagueData[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -133,6 +148,7 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
         body: JSON.stringify({ name: name.trim(), type, players }),
       });
       await apiOk(res, `Created ${type} league "${name.trim()}"`);
+      await onLeaguesChanged();
       setName(""); setPlayerInput(""); setType("normal");
     } catch (error: unknown) {
       alert(error instanceof Error ? error.message : "Could not create league");
@@ -223,6 +239,14 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
         </div>
       </div>
 
+      <label className="block max-w-md text-sm">
+        <span className="text-slate-300">Manage league</span>
+        <select className="input mt-1" value={selectedLeagueId ?? ""} onChange={(event) => setSelectedLeagueId(event.target.value || null)}>
+          <option value="">Default league</option>
+          {leagueOptions.map((league) => <option key={league.id} value={league.id}>{league.name} ({league.type === "tournament" ? "Tournament" : "Round-robin"})</option>)}
+        </select>
+      </label>
+
       <div className="flex gap-1 rounded-xl border border-slate-800 bg-slate-900/50 p-1">
         {(["scores", "players", "leagues", "audit"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
@@ -235,8 +259,8 @@ function LeaguesTab({ apiOk }: { apiOk: (res: Response, ok: string) => Promise<v
       {toast && <div className="card border-pitch-700/60 bg-pitch-950/40 px-4 py-2 text-sm text-pitch-300">âœ“ {toast}</div>}
 
       {tab === "scores" && <ScoresTab data={data} apiOk={apiOk} patchMatch={patchMatch} setDialog={setDialog} pendingRef={pendingRef} />}
-      {tab === "players" && <PlayersTab data={data} apiOk={apiOk} setDialog={setDialog} pendingRef={pendingRef} />}
-      {tab === "leagues" && <LeaguesTab apiOk={apiOk} />}
+      {tab === "players" && <PlayersTab data={data} leagueId={selectedLeagueId} apiOk={apiOk} setDialog={setDialog} pendingRef={pendingRef} />}
+      {tab === "leagues" && <LeaguesTab apiOk={apiOk} onLeaguesChanged={loadLeagueOptions} />}
       {tab === "audit" && <AuditTab />}
       <ConfirmDialog open={dialog!==null} title={dialog?.title??''} message={dialog?.message??''} destructive={dialog?.destructive} onConfirm={handleDialogConfirm} onCancel={handleDialogCancel} />
     </div>
@@ -251,6 +275,7 @@ function ScoresTab({ data, apiOk, patchMatch, setDialog, pendingRef }: { data: D
   const [editId, setEditId] = useState<string | null>(null);
   const [hg, setHg] = useState("");
   const [ag, setAg] = useState("");
+  const [winnerOverride, setWinnerOverride] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const homeScoreRef = useRef<HTMLInputElement>(null);
   const awayScoreRef = useRef<HTMLInputElement>(null);
@@ -279,6 +304,7 @@ function ScoresTab({ data, apiOk, patchMatch, setDialog, pendingRef }: { data: D
     setEditId(m.id);
     setHg(m.homeGoals != null ? String(m.homeGoals) : "");
     setAg(m.awayGoals != null ? String(m.awayGoals) : "");
+    setWinnerOverride(m.winnerOverride ?? "");
   }
 
   async function save(m: Match) {
@@ -295,7 +321,7 @@ function ScoresTab({ data, apiOk, patchMatch, setDialog, pendingRef }: { data: D
       const res = await fetch(`/api/matches/${m.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ homeGoals: h, awayGoals: a }),
+        body: JSON.stringify({ homeGoals: h, awayGoals: a, ...(data.leagueType === "tournament" ? { winnerOverride: winnerOverride || null } : {}) }),
       });
       await apiOk(res, `Saved ${m.homePlayer.name} ${h}:${a} ${m.awayPlayer.name}`);
       patchMatch(m.id, { homeGoals: h, awayGoals: a, status: "completed", playedAt: m.playedAt ?? new Date().toISOString() });
@@ -398,6 +424,13 @@ function ScoresTab({ data, apiOk, patchMatch, setDialog, pendingRef }: { data: D
                         }
                       }}
                     />
+                    {data.leagueType === "tournament" && hg === ag && (
+                      <select className="input !w-36 !px-2 text-xs" value={winnerOverride} onChange={(e) => setWinnerOverride(e.target.value)} aria-label="Draw winner">
+                        <option value="">Select winner</option>
+                        <option value={m.homePlayerId}>{m.homePlayer.name}</option>
+                        <option value={m.awayPlayerId}>{m.awayPlayer.name}</option>
+                      </select>
+                    )}
                   </>
                 ) : (
                   <span className={`grid min-w-[3rem] place-items-center rounded-lg px-2 py-1 text-base font-extrabold tabular-nums ${played ? "bg-slate-950" : "border border-slate-700 text-slate-500"}`}>
@@ -446,7 +479,7 @@ function ScoresTab({ data, apiOk, patchMatch, setDialog, pendingRef }: { data: D
   );
 }
 
-function PlayersTab({ data, apiOk, setDialog, pendingRef }: { data: DataShape; apiOk: (res: Response, ok: string) => Promise<void>; setDialog: (d: any) => void; pendingRef: { current: (() => void) | null } }) {
+function PlayersTab({ data, leagueId, apiOk, setDialog, pendingRef }: { data: DataShape; leagueId: string | null; apiOk: (res: Response, ok: string) => Promise<void>; setDialog: (d: any) => void; pendingRef: { current: (() => void) | null } }) {
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState("");
   const [adding, setAdding] = useState(false);
@@ -461,7 +494,7 @@ function PlayersTab({ data, apiOk, setDialog, pendingRef }: { data: DataShape; a
       const res = await fetch("/api/players", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), avatar: avatar.trim() || null }),
+        body: JSON.stringify({ name: name.trim(), avatar: avatar.trim() || null, leagueId }),
       });
       await apiOk(res, `Added ${name.trim()} (+fixtures auto-generated)`);
       setName(""); setAvatar("");
